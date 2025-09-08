@@ -1,10 +1,5 @@
 # RecallForge
 
-## Live Demo
-Try the live app here: [https://recallforge-2.onrender.com](https://recallforge-2.onrender.com)
-
----
-
 ## Project Overview
 RecallForge is a **full-stack MERN application** designed to help students study smarter using **Active Recall** and **Spaced Repetition**.  
 Users create cards for topics they learn, and the app schedules intelligent reviews to maximize memory retention and learning efficiency.
