@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-# recallforge
-=======
 # RecallForge
 
 ## Live Demo
