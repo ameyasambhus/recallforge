@@ -65,4 +65,3 @@ Users create cards for topics they learn, and the app schedules intelligent revi
 - **Backend:** Node.js, Express.js  
 - **Database:** MongoDB  
 - **Authentication:** JWT, OTP verification via Nodemailer
->>>>>>> 876c314 (commiting final version)
