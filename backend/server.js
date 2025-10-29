@@ -1,7 +1,7 @@
 import cookieParser from "cookie-parser";
 import express from "express";
 import cors from "cors";
-import "dotenv/config";
+import dotenv from "dotenv";
 import connectDB from "./config/mongodb.js";
 import authRouter from "./routes/authRoutes.js";
 import cardRouter from "./routes/cardRoutes.js";
@@ -13,6 +13,10 @@ import path from "path";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Load .env file if it exists (local development)
+// In Docker, env vars are passed via --env-file flag
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 const app = express();
 const port = process.env.PORT || 4000;
