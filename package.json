@@ -19,6 +19,7 @@
   },
   "homepage": "https://github.com/GayakEngineer/recallforge#readme",
   "dependencies": {
+    "@google/genai": "^1.28.0",
     "mongoose": "^8.19.2",
     "nodemailer": "^7.0.10",
     "tsx": "^4.20.6"

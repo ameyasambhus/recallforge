@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
-import userModel from "../models/userModel";
+import userModel from "../models/userModel.js";
 import jwt from "jsonwebtoken";
-import transporter from "../config/nodemailer";
+import transporter from "../config/nodemailer.js";
 import dotenv from 'dotenv';
 dotenv.config()
 export const registerService = {
@@ -26,9 +26,11 @@ export const registerService = {
             console.error("Failed to send welcome email:", error);
         });
 
-        return jwt.sign({ id: user._id }, process.env.JWT_SECRET as string, {
+        const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET as string, {
             expiresIn: "7d",
         });
+
+        return { token, userId: user._id };
     },
 
 }
@@ -59,6 +61,9 @@ export const verifyService = {
         user.verifyOtp = "";
         user.verifyOtpExpireAt = 0;
         await user.save();
+    },
+    async deleteUnverifiedUser(userId: any) {
+        await userModel.findByIdAndDelete(userId);
     }
 }
 export const resetService={

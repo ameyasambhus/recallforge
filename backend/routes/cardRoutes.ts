@@ -3,6 +3,7 @@ import userAuth from "../middleware/userAuth.js";
 import {
   createCard,
   deleteCard,
+  generateAnswer,
   getAllCards,
   getDueCards,
   reviewCard,
@@ -15,5 +16,6 @@ cardRouter.get("/cards", userAuth, getAllCards);
 cardRouter.put("/:id/review", userAuth, reviewCard);
 cardRouter.put("/:id/update", userAuth, updateCard);
 cardRouter.delete("/:id/delete", userAuth, deleteCard);
+cardRouter.post("/generate", userAuth, generateAnswer);
 
 export default cardRouter;

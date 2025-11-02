@@ -34,6 +34,7 @@ const AuthPage = () => {
 
   const sendOtp = async () => {
     try {
+      console.log("Attempting to register user...");
       // First, we need to register the user to get authentication for OTP
       axios.defaults.withCredentials = true;
       const { data } = await axios.post("/api/auth/register", {
@@ -42,22 +43,44 @@ const AuthPage = () => {
         password,
       });
 
+      console.log("Registration response:", data);
+
       if (data.success) {
         // User registered, now send OTP
+        console.log("User registered successfully, fetching user data...");
         await getUserData();
+        
+        console.log("Sending OTP...");
         const otpResponse = await axios.post("/api/auth/send-verify-otp");
+        console.log("OTP response:", otpResponse.data);
+        
         if (otpResponse.data.success) {
           toast.success(otpResponse.data.message);
           setOtpSent(true);
         } else {
           toast.error(otpResponse.data.message);
+          // If account was deleted due to OTP send failure, reset the form
+          if (otpResponse.data.accountDeleted) {
+            setOtpSent(false);
+            setOtp("");
+            setName("");
+            setEmail("");
+            setPassword("");
+          }
         }
       } else {
         toast.error(data.message);
       }
     } catch (error) {
-      toast.error(error.response?.data?.message || "Failed to send OTP");
-      console.error("Error sending OTP:", error);
+      console.error("Error in sendOtp:", error);
+      const errorMessage = error.response?.data?.message || error.message || "Failed to send OTP. Please try again.";
+      toast.error(errorMessage);
+      // Reset form on error
+      setOtpSent(false);
+      setOtp("");
+      setName("");
+      setEmail("");
+      setPassword("");
     }
   };
 
@@ -74,10 +97,26 @@ const AuthPage = () => {
         navigate("/app/log");
       } else {
         toast.error(data.message);
+        // If account was removed due to invalid/expired OTP, reset the form
+        if (data.message.includes("removed") || data.message.includes("expired")) {
+          setOtpSent(false);
+          setOtpVerified(false);
+          setOtp("");
+          setName("");
+          setEmail("");
+          setPassword("");
+        }
       }
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to verify OTP");
       console.error("Error verifying OTP:", error);
+      // Reset form on error
+      setOtpSent(false);
+      setOtpVerified(false);
+      setOtp("");
+      setName("");
+      setEmail("");
+      setPassword("");
     }
   };
 
@@ -105,14 +144,6 @@ const AuthPage = () => {
   return (
     <div className="min-h-screen bg-black text-white flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-zinc-900 rounded-lg p-6 shadow-lg">
-        <div className="mb-4">
-          <Link
-            to="/"
-            className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white"
-          >
-            ← Back to Home
-          </Link>
-        </div>
 
         <div className="text-center mb-6">
           <h1 className="text-2xl font-bold text-[#605dff]">

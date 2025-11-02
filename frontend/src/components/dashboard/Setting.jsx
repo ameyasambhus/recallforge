@@ -31,7 +31,6 @@ const Setting = () => {
       <h2 className="text-2xl font-semibold text-white mb-4 text-center">
         Settings
       </h2>
-      <h6>{userData ? userData.email : "User"}</h6>
       <br />
       {/* Email verification removed - all users must verify during registration */}
       

@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import cardModel from "../models/cardModel.js";
-
+import { GoogleGenAI } from "@google/genai";
+import dotenv from 'dotenv';
+dotenv.config()
 export const createCard = async (req: Request, res: Response) => {
   try {
     const card = new cardModel({
@@ -110,5 +112,50 @@ export const deleteCard = async (req: Request, res: Response) => {
     res.json({ message: "Card deleted successfully" });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : "An error occurred" });
+  }
+};
+
+export const generateAnswer = async (req: Request, res: Response) => {
+  try {
+    const { question } = req.body;
+    
+    if (!question) {
+      return res.status(400).json({ success: false, error: "Question is required" });
+    }
+
+    // Set headers for Server-Sent Events (SSE)
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // Disable buffering in nginx
+
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const response = await ai.models.generateContentStream({
+      model: "gemini-2.0-flash-exp",
+      contents: question,
+      config: {
+        systemInstruction: "You are a tutor. You will be provided a question or a topic, mostly related to academics. Generate a short, concise response which will explain what the given topic is. Complete your response within 200 max output tokens",
+        maxOutputTokens: 200
+      },
+    });
+
+    // Stream each chunk to the client
+    for await (const chunk of response) {
+      const text = chunk.text;
+      if (text) {
+        // Send chunk as SSE format
+        res.write(`data: ${JSON.stringify({ text })}\n\n`);
+      }
+    }
+
+    // Send completion signal
+    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    res.end();
+
+  } catch (err) {
+    console.error('Error generating answer:', err);
+    // Send error as SSE event
+    res.write(`data: ${JSON.stringify({ error: err instanceof Error ? err.message : "An error occurred" })}\n\n`);
+    res.end();
   }
 };

@@ -21,7 +21,7 @@ export const register = async (req: Request, res: Response) => {
         message: "User already exists",
       });
     }
-    const token = await registerService.registerFunc(name, email, password);
+    const { token, userId } = await registerService.registerFunc(name, email, password);
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -31,6 +31,7 @@ export const register = async (req: Request, res: Response) => {
 
     res.status(201).json({
       success: true,
+      userId,
     });
   } catch (error) {
     res.status(500).json({
@@ -107,10 +108,27 @@ export const sendVerifyOtp = async (req: Request, res: Response) => {
     const userId = req.userId;
     const user = await verifyService.getUser(userId);
     if (user.isAccountVerified) {
-      res.json({ success: true, message: "Account already verified" });
+      return res.json({ success: true, message: "Account already verified" });
     }
-    await verifyService.sendOTP(user);
-    res.json({ success: true, message: "OTP sent to email" });
+    
+    // Try to send OTP, if it fails, delete the user
+    try {
+      await verifyService.sendOTP(user);
+      res.json({ success: true, message: "OTP sent to email" });
+    } catch (otpError) {
+      // OTP sending failed, delete the unverified user
+      await verifyService.deleteUnverifiedUser(userId);
+      res.clearCookie("token", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+      });
+      res.json({ 
+        success: false, 
+        message: "Failed to send OTP. Account has been removed. Please try registering again.",
+        accountDeleted: true 
+      });
+    }
   } catch (error) {
     res.json({ success: false, message: error instanceof Error ? error.message : "An error occurred" });
   }
@@ -124,10 +142,24 @@ export const verifyEmail = async (req: Request, res: Response) => {
       return res.json({ success: false, message: "User not found" });
     }
     if (user.verifyOtp !== otp) {
-      return res.json({ success: false, message: "Invalid OTP" });
+      // Delete user on invalid OTP
+      await verifyService.deleteUnverifiedUser(user._id);
+      res.clearCookie("token", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+      });
+      return res.json({ success: false, message: "Invalid OTP. Account has been removed. Please register again." });
     }
     if (user.verifyOtpExpireAt < Date.now()) {
-      return res.json({ success: false, message: "OTP expired" });
+      // Delete user on expired OTP
+      await verifyService.deleteUnverifiedUser(user._id);
+      res.clearCookie("token", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+      });
+      return res.json({ success: false, message: "OTP expired. Account has been removed. Please register again." });
     }
     await verifyService.verify(user);
     res.json({ success: true, message: "Email verified successfully" });
