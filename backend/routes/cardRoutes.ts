@@ -7,7 +7,7 @@ import {
   getDueCards,
   reviewCard,
   updateCard,
-} from "../controllers/cardController.js";
+} from "../controllers/card.controller.js";
 const cardRouter = express.Router();
 cardRouter.post("/log", userAuth, createCard);
 cardRouter.get("/due", userAuth, getDueCards);

@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { Request, Response } from "express";
 import userModel from "../models/userModel.js";
 import transporter from "../config/nodemailer.js";
+import { loginService, registerService, resetService, verifyService } from "../services/auth.service.js";
 
 export const register = async (req: Request, res: Response) => {
   const { name, email, password } = req.body;
@@ -13,34 +14,20 @@ export const register = async (req: Request, res: Response) => {
     });
   }
   try {
-    const existingUser = await userModel.findOne({ email });
+    const existingUser = await registerService.getExistingUser(email);
     if (existingUser) {
       return res.json({
         success: false,
         message: "User already exists",
       });
     }
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const user = new userModel({ name, email, password: hashedPassword });
-    await user.save();
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET as string, {
-      expiresIn: "7d",
-    });
+    const token = await registerService.registerFunc(name, email, password);
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
-
-    const mailOptions = {
-      from: process.env.SENDER_EMAIL,
-      to: email,
-      subject: "Welcome to RecallForge",
-      text: `Hello ${name},\n\nThank you for registering! Your account has been created using the email: ${email}. Happy Learning!\n\nBest Regards,\nRecallForge Team`,
-    };
-
-    await transporter.sendMail(mailOptions);
 
     res.status(201).json({
       success: true,
@@ -62,7 +49,7 @@ export const login = async (req: Request, res: Response) => {
     });
   }
   try {
-    const user = await userModel.findOne({ email });
+    const user = await loginService.getUser(email);
     if (!user) {
       return res.json({
         success: false,
@@ -118,21 +105,11 @@ export const logout = async (req: Request, res: Response) => {
 export const sendVerifyOtp = async (req: Request, res: Response) => {
   try {
     const userId = req.userId;
-    const user = await userModel.findById(userId);
+    const user = await verifyService.getUser(userId);
     if (user.isAccountVerified) {
       res.json({ success: true, message: "Account already verified" });
     }
-    const otp = String(Math.floor(100000 + Math.random() * 900000));
-    user.verifyOtp = otp;
-    user.verifyOtpExpireAt = Date.now() + 24 * 60 * 60 * 1000; //24 hours
-    await user.save();
-    const mailOptions = {
-      from: process.env.SENDER_EMAIL,
-      to: user.email,
-      subject: "Verify your email",
-      text: `Your verification code is: ${otp} \n\nBest Regards,\nRecallForge Team`,
-    };
-    await transporter.sendMail(mailOptions);
+    await verifyService.sendOTP(user);
     res.json({ success: true, message: "OTP sent to email" });
   } catch (error) {
     res.json({ success: false, message: error instanceof Error ? error.message : "An error occurred" });
@@ -142,7 +119,6 @@ export const sendVerifyOtp = async (req: Request, res: Response) => {
 export const verifyEmail = async (req: Request, res: Response) => {
   try {
     const { otp } = req.body;
-    console.log(otp);
     const user = req.user;
     if (!user || !otp) {
       return res.json({ success: false, message: "User not found" });
@@ -153,10 +129,7 @@ export const verifyEmail = async (req: Request, res: Response) => {
     if (user.verifyOtpExpireAt < Date.now()) {
       return res.json({ success: false, message: "OTP expired" });
     }
-    user.isAccountVerified = true;
-    user.verifyOtp = "";
-    user.verifyOtpExpireAt = 0;
-    await user.save();
+    await verifyService.verify(user);
     res.json({ success: true, message: "Email verified successfully" });
   } catch (error) {
     res.json({ success: false, message: error instanceof Error ? error.message : "An error occurred" });
@@ -177,21 +150,11 @@ export const sendResetOtp = async (req: Request, res: Response) => {
     return res.json({ success: false, message: "Email is required" });
   }
   try {
-    const user = await userModel.findOne({ email });
+    const user = await resetService.getUser(email);
     if (!user) {
       return res.json({ success: false, message: "User not found" });
     }
-    const otp = String(Math.floor(100000 + Math.random() * 900000));
-    user.resetOtp = otp;
-    user.resetOtpExpireAt = Date.now() + 15 * 60 * 1000; // 15 minutes
-    await user.save();
-    const mailOptions = {
-      from: process.env.SENDER_EMAIL,
-      to: user.email,
-      subject: "Reset your password",
-      text: `Your password reset code is: ${otp} \n\nBest Regards,\nRecallForge Team`,
-    };
-    await transporter.sendMail(mailOptions);
+    await resetService.resetOTP(user);
     res.json({ success: true, message: "OTP sent to email" });
   } catch (error) {
     res.json({ success: false, message: error instanceof Error ? error.message : "An error occurred" });
@@ -204,7 +167,7 @@ export const resetPassword = async (req: Request, res: Response) => {
     return res.json({ success: false, message: "All fields are required" });
   }
   try {
-    const user = await userModel.findOne({ email });
+    const user = await resetService.getUser(email);
     if (!user) {
       return res.json({ success: false, message: "User not found" });
     }
@@ -214,11 +177,7 @@ export const resetPassword = async (req: Request, res: Response) => {
     if (user.resetOtpExpireAt < Date.now()) {
       return res.json({ success: false, message: "OTP expired" });
     }
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    user.password = hashedPassword;
-    user.resetOtp = "";
-    user.resetOtpExpireAt = 0;
-    await user.save();
+    await resetService.reset(user, newPassword);
     res.json({ success: true, message: "Password reset successfully" });
   } catch (error) {
     res.json({ success: false, message: error instanceof Error ? error.message : "An error occurred" });

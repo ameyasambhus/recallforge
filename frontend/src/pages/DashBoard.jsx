@@ -38,15 +38,16 @@ const TopNav = () => (
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { loggedIn } = useContext(AppContent);
+  const { loggedIn, userData } = useContext(AppContent);
   const redirect = async () => {
     if (!loggedIn) {
       navigate("/auth");
     }
+    // Removed email verification check - all users must verify during registration
   };
   useEffect(() => {
     redirect();
-  }, []);
+  }, [loggedIn, userData]);
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
       <TopNav />

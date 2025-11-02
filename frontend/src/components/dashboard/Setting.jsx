@@ -7,9 +7,6 @@ const Setting = () => {
   const { userData, setUserData, setLoggedIn } = useContext(AppContent);
   const navigate = useNavigate();
   console.log(userData);
-  const redirectToVerifyEmail = async () => {
-    navigate("/email-verify");
-  };
   const navigateToReset = async () => {
     navigate("/reset-pass");
   };
@@ -36,20 +33,8 @@ const Setting = () => {
       </h2>
       <h6>{userData ? userData.email : "User"}</h6>
       <br />
-      {userData.isAccountVerified ? (
-        <div></div>
-      ) : (
-        <div className="space-y-3">
-          <button
-            onClick={redirectToVerifyEmail}
-            className="w-full rounded-xl bg-indigo-600 px-4 py-3 text-white font-medium shadow-md hover:bg-indigo-500"
-          >
-            Verify Email
-          </button>
-        </div>
-      )}
-
-      <br />
+      {/* Email verification removed - all users must verify during registration */}
+      
       <div className="space-y-3">
         <button
           onClick={navigateToReset}

@@ -16,7 +16,7 @@ const __dirname = path.dirname(__filename);
 
 // Load .env file if it exists (local development)
 // In Docker, env vars are passed via --env-file flag
-dotenv.config({ path: path.join(__dirname, '.env') });
+dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 4000;

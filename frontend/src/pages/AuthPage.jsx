@@ -12,17 +12,74 @@ const AuthPage = () => {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpVerified, setOtpVerified] = useState(false);
   const { setLoggedIn, getUserData, userData, loggedIn } =
     useContext(AppContent);
 
   const navigateToReset = async () => {
     navigate("/reset-pass");
   };
-  useEffect(() => {
-    if (loggedIn) {
-      navigate("/app/log");
+
+  const handleTabSwitch = (newTab) => {
+    setTab(newTab);
+    // Reset signup-specific states when switching tabs
+    if (newTab === "login") {
+      setOtpSent(false);
+      setOtpVerified(false);
+      setOtp("");
     }
-  }, [loggedIn, navigate]);
+  };
+
+  const sendOtp = async () => {
+    try {
+      // First, we need to register the user to get authentication for OTP
+      axios.defaults.withCredentials = true;
+      const { data } = await axios.post("/api/auth/register", {
+        name,
+        email,
+        password,
+      });
+
+      if (data.success) {
+        // User registered, now send OTP
+        await getUserData();
+        const otpResponse = await axios.post("/api/auth/send-verify-otp");
+        if (otpResponse.data.success) {
+          toast.success(otpResponse.data.message);
+          setOtpSent(true);
+        } else {
+          toast.error(otpResponse.data.message);
+        }
+      } else {
+        toast.error(data.message);
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to send OTP");
+      console.error("Error sending OTP:", error);
+    }
+  };
+
+  const verifyOtp = async () => {
+    try {
+      axios.defaults.withCredentials = true;
+      const { data } = await axios.post("/api/auth/verify-account", { otp });
+
+      if (data.success) {
+        toast.success(data.message);
+        setOtpVerified(true);
+        await getUserData();
+        setLoggedIn(true);
+        navigate("/app/log");
+      } else {
+        toast.error(data.message);
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to verify OTP");
+      console.error("Error verifying OTP:", error);
+    }
+  };
 
   const handleSubmit = async () => {
     try {
@@ -34,21 +91,7 @@ const AuthPage = () => {
         });
         if (data.success) {
           setLoggedIn(true);
-          getUserData();
           navigate("/app/log");
-        } else {
-          toast.error(data.message);
-        }
-      } else {
-        const { data } = await axios.post("/api/auth/register", {
-          name,
-          email,
-          password,
-        });
-        if (data.success) {
-          setLoggedIn(true);
-          getUserData();
-          navigate("/email-verify");
         } else {
           toast.error(data.message);
         }
@@ -82,22 +125,20 @@ const AuthPage = () => {
 
         <div className="flex mb-6">
           <button
-            className={`btn btn-primary w-1/2 py-2 mr-1 text-sm font-medium rounded-l ${
-              tab === "login"
+            className={`btn btn-primary w-1/2 py-2 mr-1 text-sm font-medium rounded-l ${tab === "login"
                 ? "bg-black text-white"
                 : "bg-zinc-800 text-gray-400"
-            }`}
-            onClick={() => setTab("login")}
+              }`}
+            onClick={() => handleTabSwitch("login")}
           >
             Login
           </button>
           <button
-            className={`btn btn-primary w-1/2 py-2  text-sm font-medium rounded-r ${
-              tab === "signup"
+            className={`btn btn-primary w-1/2 py-2  text-sm font-medium rounded-r ${tab === "signup"
                 ? "bg-black text-white"
                 : "bg-zinc-800 text-gray-400"
-            }`}
-            onClick={() => setTab("signup")}
+              }`}
+            onClick={() => handleTabSwitch("signup")}
           >
             Sign Up
           </button>
@@ -173,6 +214,7 @@ const AuthPage = () => {
                 id="first-name"
                 placeholder="John Doe"
                 className="w-full px-3 py-2 rounded bg-zinc-800 border border-gray-700"
+                disabled={otpSent}
               />
             </div>
 
@@ -187,6 +229,7 @@ const AuthPage = () => {
                 id="signup-email"
                 placeholder="Enter your email"
                 className="w-full px-3 py-2 rounded bg-zinc-800 border border-gray-700"
+                disabled={otpSent}
               />
             </div>
 
@@ -202,23 +245,54 @@ const AuthPage = () => {
                   className="w-full px-3 py-2 pr-10 rounded bg-zinc-800 border border-gray-700"
                   onChange={(e) => setPassword(e.target.value)}
                   value={password}
+                  disabled={otpSent}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                  disabled={otpSent}
                 >
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
             </div>
             <br />
-            <button
-              className="w-full py-2 rounded bg-gradient-to-r from-[#605dff] to-[#2826a1] font-semibold"
-              onClick={handleSubmit}
-            >
-              Create Account
-            </button>
+
+            {!otpSent ? (
+              <button
+                className="w-full py-2 rounded bg-gradient-to-r from-[#605dff] to-[#2826a1] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={sendOtp}
+                disabled={!name || !email || !password}
+              >
+                Send OTP
+              </button>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-sm mb-1" htmlFor="otp">
+                    Enter OTP
+                  </label>
+                  <input
+                    type="text"
+                    onChange={(e) => setOtp(e.target.value)}
+                    value={otp}
+                    id="otp"
+                    placeholder="Enter 6-digit OTP"
+                    className="w-full px-3 py-2 rounded bg-zinc-800 border border-gray-700"
+                    maxLength={6}
+                  />
+                </div>
+                <br />
+                <button
+                  className="w-full py-2 rounded bg-gradient-to-r from-[#605dff] to-[#2826a1] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={verifyOtp}
+                  disabled={!otp || otp.length !== 6}
+                >
+                  Verify OTP & Create Account
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
