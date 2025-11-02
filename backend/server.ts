@@ -1,5 +1,5 @@
 import cookieParser from "cookie-parser";
-import express from "express";
+import express, { Request, Response } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import connectDB from "./config/mongodb.js";
@@ -35,7 +35,7 @@ app.use("/api/auth", authRouter);
 
 app.use(express.static(path.join(__dirname, "../frontend/dist")));
 
-app.get(/.*/, (req, res) => {
+app.get(/.*/, (req: Request, res: Response) => {
   res.sendFile(path.join(__dirname, "../frontend/dist", "index.html"));
 });
 

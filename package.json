@@ -4,8 +4,7 @@
   "description": "This is spaced repetition software",
   "main": "index.js",
   "scripts": {
-    "build": "npm install --prefix backend && npm install --prefix frontend && npm run build --prefix frontend"
-,
+    "build": "npm install --prefix backend && npm install --prefix frontend && npm run build --prefix frontend",
     "start": "npm run start --prefix backend"
   },
   "repository": {
@@ -18,5 +17,15 @@
   "bugs": {
     "url": "https://github.com/GayakEngineer/recallforge/issues"
   },
-  "homepage": "https://github.com/GayakEngineer/recallforge#readme"
+  "homepage": "https://github.com/GayakEngineer/recallforge#readme",
+  "dependencies": {
+    "mongoose": "^8.19.2",
+    "nodemailer": "^7.0.10",
+    "tsx": "^4.20.6"
+  },
+  "devDependencies": {
+    "@types/mongoose": "^5.11.96",
+    "@types/node": "^24.9.2",
+    "@types/nodemailer": "^7.0.3"
+  }
 }

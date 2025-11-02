@@ -1,8 +1,10 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { Request, Response } from "express";
 import userModel from "../models/userModel.js";
 import transporter from "../config/nodemailer.js";
-export const register = async (req, res) => {
+
+export const register = async (req: Request, res: Response) => {
   const { name, email, password } = req.body;
   if (!name || !email || !password) {
     return res.json({
@@ -21,7 +23,7 @@ export const register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = new userModel({ name, email, password: hashedPassword });
     await user.save();
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET as string, {
       expiresIn: "7d",
     });
     res.cookie("token", token, {
@@ -46,12 +48,12 @@ export const register = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message,
+      message: error instanceof Error ? error.message : "An error occurred",
     });
   }
 };
 
-export const login = async (req, res) => {
+export const login = async (req: Request, res: Response) => {
   const { email, password } = req.body;
   if (!email || !password) {
     return res.json({
@@ -74,7 +76,7 @@ export const login = async (req, res) => {
         message: "Invalid credentials",
       });
     }
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET as string, {
       expiresIn: "7d",
     });
     res.cookie("token", token, {
@@ -89,12 +91,12 @@ export const login = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message,
+      message: error instanceof Error ? error.message : "An error occurred",
     });
   }
 };
 
-export const logout = async (req, res) => {
+export const logout = async (req: Request, res: Response) => {
   try {
     res.clearCookie("token", {
       httpOnly: true,
@@ -108,12 +110,12 @@ export const logout = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message,
+      message: error instanceof Error ? error.message : "An error occurred",
     });
   }
 };
 
-export const sendVerifyOtp = async (req, res) => {
+export const sendVerifyOtp = async (req: Request, res: Response) => {
   try {
     const userId = req.userId;
     const user = await userModel.findById(userId);
@@ -133,13 +135,12 @@ export const sendVerifyOtp = async (req, res) => {
     await transporter.sendMail(mailOptions);
     res.json({ success: true, message: "OTP sent to email" });
   } catch (error) {
-    res.json({ success: false, message: error.message });
+    res.json({ success: false, message: error instanceof Error ? error.message : "An error occurred" });
   }
 };
 
-export const verifyEmail = async (req, res) => {
+export const verifyEmail = async (req: Request, res: Response) => {
   try {
-    const { userId } = req.userId;
     const { otp } = req.body;
     console.log(otp);
     const user = req.user;
@@ -158,19 +159,19 @@ export const verifyEmail = async (req, res) => {
     await user.save();
     res.json({ success: true, message: "Email verified successfully" });
   } catch (error) {
-    res.json({ success: false, message: error.message });
+    res.json({ success: false, message: error instanceof Error ? error.message : "An error occurred" });
   }
 };
 
-export const isAuthenticated = async (req, res) => {
+export const isAuthenticated = async (req: Request, res: Response) => {
   try {
     return res.json({ success: true });
   } catch (error) {
-    res.json({ success: false, message: error.message });
+    res.json({ success: false, message: error instanceof Error ? error.message : "An error occurred" });
   }
 };
 
-export const sendResetOtp = async (req, res) => {
+export const sendResetOtp = async (req: Request, res: Response) => {
   const { email } = req.body;
   if (!email) {
     return res.json({ success: false, message: "Email is required" });
@@ -193,11 +194,11 @@ export const sendResetOtp = async (req, res) => {
     await transporter.sendMail(mailOptions);
     res.json({ success: true, message: "OTP sent to email" });
   } catch (error) {
-    res.json({ success: false, message: error.message });
+    res.json({ success: false, message: error instanceof Error ? error.message : "An error occurred" });
   }
 };
 
-export const resetPassword = async (req, res) => {
+export const resetPassword = async (req: Request, res: Response) => {
   const { email, otp, newPassword } = req.body;
   if (!email || !otp || !newPassword) {
     return res.json({ success: false, message: "All fields are required" });
@@ -220,6 +221,6 @@ export const resetPassword = async (req, res) => {
     await user.save();
     res.json({ success: true, message: "Password reset successfully" });
   } catch (error) {
-    res.json({ success: false, message: error.message });
+    res.json({ success: false, message: error instanceof Error ? error.message : "An error occurred" });
   }
 };

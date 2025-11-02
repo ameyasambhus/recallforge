@@ -1,5 +1,7 @@
+import { Request, Response } from "express";
 import userModel from "../models/userModel.js";
-export const getUserData = async (req, res) => {
+
+export const getUserData = async (req: Request, res: Response) => {
   try {
     const userId = req.userId;
     const user = await userModel.findById(userId);
@@ -17,6 +19,6 @@ export const getUserData = async (req, res) => {
       },
     });
   } catch (error) {
-    res.json({ success: false, message: error.message });
+    res.json({ success: false, message: error instanceof Error ? error.message : "An error occurred" });
   }
 };

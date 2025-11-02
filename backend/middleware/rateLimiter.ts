@@ -1,8 +1,9 @@
+import { Request, Response, NextFunction } from "express";
 import ratelimit from "../config/upstash.js";
 
-const rateLimiter = async (req, res, next) => {
+const rateLimiter = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const identifier = req.userId ? req.userId : req.ip;
+    const identifier = req.userId ? req.userId : (req.ip || 'unknown');
     const { success } = await ratelimit.limit(identifier);
     if (!success) {
       return res.status(429).json({ message: "Too many requests" });
