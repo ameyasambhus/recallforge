@@ -13,24 +13,7 @@ export const registerService = {
         const user = new userModel({ name, email, password: hashedPassword });
         await user.save();
 
-        // Send welcome email (non-blocking - don't wait for it)
-        const mailOptions = {
-            from: process.env.SENDER_EMAIL,
-            to: email,
-            subject: "Welcome to RecallForge",
-            text: `Hello ${name},\n\nThank you for registering! Your account has been created using the email: ${email}. Happy Learning!\n\nBest Regards,\nRecallForge Team`,
-        };
-
-        // Send email asynchronously without blocking registration
-        transporter.sendMail(mailOptions).catch((error) => {
-            console.error("Failed to send welcome email:", error);
-        });
-
-        const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET as string, {
-            expiresIn: "7d",
-        });
-
-        return { token, userId: user._id };
+        return {userId: user._id };
     },
 
 }
@@ -40,8 +23,8 @@ export const loginService = {
     }
 }
 export const verifyService = {
-    async getUser(userId: any) {
-        return await userModel.findById(userId);
+    async getUser(email: any) {
+        return await userModel.findOne({ email });
     },
     async sendOTP(user: any) {
         const otp = String(Math.floor(100000 + Math.random() * 900000));

@@ -14,7 +14,6 @@ const AuthPage = () => {
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
-  const [otpVerified, setOtpVerified] = useState(false);
   const { setLoggedIn, getUserData, userData, loggedIn } =
     useContext(AppContent);
 
@@ -22,12 +21,17 @@ const AuthPage = () => {
     navigate("/reset-pass");
   };
 
+  useEffect(() => {
+    if (loggedIn) {
+      navigate("/app/log");
+    }
+  }, [loggedIn, navigate]);
+
   const handleTabSwitch = (newTab) => {
     setTab(newTab);
     // Reset signup-specific states when switching tabs
     if (newTab === "login") {
       setOtpSent(false);
-      setOtpVerified(false);
       setOtp("");
     }
   };
@@ -43,29 +47,21 @@ const AuthPage = () => {
         password,
       });
 
-      console.log("Registration response:", data);
-
       if (data.success) {
         // User registered, now send OTP
         console.log("User registered successfully, fetching user data...");
-        await getUserData();
-        
         console.log("Sending OTP...");
-        const otpResponse = await axios.post("/api/auth/send-verify-otp");
-        console.log("OTP response:", otpResponse.data);
-        
+        const otpResponse = await axios.post("/api/auth/send-verify-otp", { email });
+
         if (otpResponse.data.success) {
           toast.success(otpResponse.data.message);
           setOtpSent(true);
         } else {
           toast.error(otpResponse.data.message);
-          // If account was deleted due to OTP send failure, reset the form
+          console.log("Error is in otpResponse");
           if (otpResponse.data.accountDeleted) {
             setOtpSent(false);
             setOtp("");
-            setName("");
-            setEmail("");
-            setPassword("");
           }
         }
       } else {
@@ -78,52 +74,33 @@ const AuthPage = () => {
       // Reset form on error
       setOtpSent(false);
       setOtp("");
-      setName("");
-      setEmail("");
-      setPassword("");
     }
   };
 
   const verifyOtp = async () => {
     try {
       axios.defaults.withCredentials = true;
-      const { data } = await axios.post("/api/auth/verify-account", { otp });
+      const { data } = await axios.post("/api/auth/verify-account", {email, otp });
 
       if (data.success) {
         toast.success(data.message);
-        setOtpVerified(true);
-        await getUserData();
-        setLoggedIn(true);
-        navigate("/app/log");
+        setTab("login");
       } else {
         toast.error(data.message);
-        // If account was removed due to invalid/expired OTP, reset the form
-        if (data.message.includes("removed") || data.message.includes("expired")) {
-          setOtpSent(false);
-          setOtpVerified(false);
           setOtp("");
-          setName("");
-          setEmail("");
-          setPassword("");
-        }
       }
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to verify OTP");
       console.error("Error verifying OTP:", error);
       // Reset form on error
       setOtpSent(false);
-      setOtpVerified(false);
       setOtp("");
-      setName("");
-      setEmail("");
-      setPassword("");
     }
   };
 
   const handleSubmit = async () => {
     try {
       axios.defaults.withCredentials = true;
-      if (tab == "login") {
         const { data } = await axios.post("/api/auth/login", {
           email,
           password,
@@ -134,7 +111,6 @@ const AuthPage = () => {
         } else {
           toast.error(data.message);
         }
-      }
     } catch (error) {
       toast.error("An error occurred. Please try again.");
       console.error("Error during authentication:", error);

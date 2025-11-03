@@ -1,8 +1,6 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { Request, Response } from "express";
-import userModel from "../models/userModel.js";
-import transporter from "../config/nodemailer.js";
 import { loginService, registerService, resetService, verifyService } from "../services/auth.service.js";
 
 export const register = async (req: Request, res: Response) => {
@@ -21,13 +19,7 @@ export const register = async (req: Request, res: Response) => {
         message: "User already exists",
       });
     }
-    const { token, userId } = await registerService.registerFunc(name, email, password);
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
+    const {userId } = await registerService.registerFunc(name, email, password);
 
     res.status(201).json({
       success: true,
@@ -104,25 +96,22 @@ export const logout = async (req: Request, res: Response) => {
 };
 
 export const sendVerifyOtp = async (req: Request, res: Response) => {
+  const { email} = req.body;
+  if (!email) {
+    return res.json({
+      success: false,
+      message: "Missing details",
+    });
+  }
   try {
-    const userId = req.userId;
-    const user = await verifyService.getUser(userId);
-    if (user.isAccountVerified) {
-      return res.json({ success: true, message: "Account already verified" });
-    }
-    
+    const user = await verifyService.getUser(email);
     // Try to send OTP, if it fails, delete the user
     try {
       await verifyService.sendOTP(user);
       res.json({ success: true, message: "OTP sent to email" });
     } catch (otpError) {
       // OTP sending failed, delete the unverified user
-      await verifyService.deleteUnverifiedUser(userId);
-      res.clearCookie("token", {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-      });
+      await verifyService.deleteUnverifiedUser(user._id);
       res.json({ 
         success: false, 
         message: "Failed to send OTP. Account has been removed. Please try registering again.",
@@ -135,34 +124,26 @@ export const sendVerifyOtp = async (req: Request, res: Response) => {
 };
 
 export const verifyEmail = async (req: Request, res: Response) => {
+  const { email, otp } = req.body;
+  if (!email || !otp) {
+    return res.json({
+      success: false,
+      message: "Missing details",
+    });
+  }
   try {
-    const { otp } = req.body;
-    const user = req.user;
-    if (!user || !otp) {
+    const user = await verifyService.getUser(email);
+    if (!user) {
       return res.json({ success: false, message: "User not found" });
     }
     if (user.verifyOtp !== otp) {
-      // Delete user on invalid OTP
-      await verifyService.deleteUnverifiedUser(user._id);
-      res.clearCookie("token", {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-      });
-      return res.json({ success: false, message: "Invalid OTP. Account has been removed. Please register again." });
+      return res.json({ success: false, message: "Invalid OTP" });
     }
     if (user.verifyOtpExpireAt < Date.now()) {
-      // Delete user on expired OTP
-      await verifyService.deleteUnverifiedUser(user._id);
-      res.clearCookie("token", {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-      });
-      return res.json({ success: false, message: "OTP expired. Account has been removed. Please register again." });
+      return res.json({ success: false, message: "OTP expired" });
     }
     await verifyService.verify(user);
-    res.json({ success: true, message: "Email verified successfully" });
+    res.json({ success: true, message: "Email verified successfully. Please Login." });
   } catch (error) {
     res.json({ success: false, message: error instanceof Error ? error.message : "An error occurred" });
   }
