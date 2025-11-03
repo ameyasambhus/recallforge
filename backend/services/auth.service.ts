@@ -37,7 +37,15 @@ export const verifyService = {
             subject: "Verify your email",
             text: `Your verification code is: ${otp} \n\nBest Regards,\nRecallForge Team`,
         };
-        await transporter.sendMail(mailOptions);
+        console.log("Attempting to send verification email to:", user.email);
+        console.log("From:", process.env.SENDER_EMAIL);
+        try {
+            const info = await transporter.sendMail(mailOptions);
+            console.log("✓ Email sent successfully:", info.messageId);
+        } catch (error) {
+            console.error("✗ Email sending failed:", error);
+            throw error; // Re-throw to let controller handle it
+        }
     },
     async verify(user: any) {
         user.isAccountVerified = true;
@@ -64,7 +72,15 @@ export const resetService={
               subject: "Reset your password",
               text: `Your password reset code is: ${otp} \n\nBest Regards,\nRecallForge Team`,
             };
-            await transporter.sendMail(mailOptions);
+            console.log("Attempting to send password reset email to:", user.email);
+            console.log("From:", process.env.SENDER_EMAIL);
+            try {
+                const info = await transporter.sendMail(mailOptions);
+                console.log("✓ Email sent successfully:", info.messageId);
+            } catch (error) {
+                console.error("✗ Email sending failed:", error);
+                throw error; // Re-throw to let controller handle it
+            }
     },
     async reset(user:any, newPassword:any){
         const hashedPassword = await bcrypt.hash(newPassword, 10);

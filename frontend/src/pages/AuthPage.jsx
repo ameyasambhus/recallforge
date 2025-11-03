@@ -49,7 +49,7 @@ const AuthPage = () => {
 
       if (data.success) {
         // User registered, now send OTP
-        console.log("User registered successfully, fetching user data...");
+        console.log("User registered successfully");
         console.log("Sending OTP...");
         const otpResponse = await axios.post("/api/auth/send-verify-otp", { email });
 
