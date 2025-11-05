@@ -10,6 +10,7 @@ Users create cards for topics they learn, and the app schedules intelligent revi
 - Full-stack MERN app: **MongoDB, Express, React, Node**
 - JWT authentication with **OTP email verification** and password reset via **Nodemailer**
 - **SM-2 spaced repetition algorithm** for personalized study schedules
+- **AI-powered answer generation** using Gemini API to automatically generate answers for questions logged during study sessions
 - Responsive UI for **quick, focused learning**
 
 ---
@@ -17,6 +18,7 @@ Users create cards for topics they learn, and the app schedules intelligent revi
 ## How RecallForge Works
 
 1. **Create a Card:** Enter a **question and answer** for each topic you learn. Each card represents knowledge you want to retain.
+   - **AI-Assisted Learning:** When logging your daily study, type in questions about what you learned. The **Gemini API** can automatically generate comprehensive answers, making it faster to create revision cards.
 2. **Organize by Subject:** Group cards into **folders based on subjects**. This allows you to filter and focus reviews on specific subjects or topics  
 3. **Intelligent Scheduling:** Each card is automatically assigned a review schedule using the **SM-2 algorithm**.  
 4. **Daily Reviews:** Visit the **Review Section** to see cards due for review. Attempt to recall each answer.  
@@ -65,3 +67,4 @@ Users create cards for topics they learn, and the app schedules intelligent revi
 - **Backend:** Node.js, Express.js  
 - **Database:** MongoDB  
 - **Authentication:** JWT, OTP verification via Nodemailer
+- **AI Integration:** Gemini API for intelligent answer generation
