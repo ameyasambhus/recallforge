@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import folderModel from "./folderModel";
 const cardSchema = new mongoose.Schema(
   {
     user: {
@@ -30,6 +31,16 @@ const cardSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+cardSchema.post('save', async function(doc){
+  const existingFolder=await folderModel.findOne({user:doc.user, name: doc.folder});
+  if(!existingFolder){
+    await folderModel.create({
+    user: doc.user,
+    name: doc.folder
+  });
+  }
+});
 
 const cardModel = mongoose.model("Card", cardSchema);
 

@@ -4,8 +4,9 @@
   "description": "This is spaced repetition software",
   "main": "index.js",
   "scripts": {
-    "build": "npm install --prefix backend && npm install --prefix frontend && npm run build --prefix frontend && npm run start --prefix backend",
-    "start": "npm run start --prefix backend"
+    "build": "npm install --prefix backend && npm install --prefix frontend && npm run build --prefix frontend",
+    "start": "npm run start --prefix backend",
+    "prod":"npm run prod --prefix backend"
   },
   "repository": {
     "type": "git",
