@@ -38,10 +38,11 @@ export const updateCard = async (req: Request, res: Response) => {
 export const getDueCards = async (req: Request, res: Response) => {
   try {
     const today = new Date(new Date().setHours(0, 0, 0, 0)); // local start of today
+    // Use lean() for faster read-only query - returns plain JS objects instead of Mongoose documents
     const cards = await cardModel.find({
       user: req.user._id,
       dueDate: { $lte: today },
-    });
+    }).lean();
     res.json({ success: true, cards });
   } catch (err) {
     res.status(500).json({ success: false, error: err instanceof Error ? err.message : "An error occurred" });
@@ -49,7 +50,8 @@ export const getDueCards = async (req: Request, res: Response) => {
 };
 export const getAllCards = async (req: Request, res: Response) => {
   try {
-    const cards = await cardModel.find({ user: req.user._id });
+    // Use lean() for faster read-only query - returns plain JS objects instead of Mongoose documents
+    const cards = await cardModel.find({ user: req.user._id }).lean();
     res.json(cards);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : "An error occurred" });

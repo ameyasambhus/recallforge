@@ -1,7 +1,6 @@
-import React, { useEffect, useState, useContext } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { AppContent } from "../../context/AppContext";
 import Card from "./Card";
 
 const AllCards = () => {
@@ -38,15 +37,19 @@ const AllCards = () => {
     fetchCards();
   }, []);
 
-  const folders = [
+  // Memoize folders computation to avoid recalculating on every render
+  const folders = useMemo(() => [
     "All",
     ...new Set(cards.map((c) => c.folder || "Uncategorized")),
-  ];
+  ], [cards]);
 
-  const filteredCards =
+  // Memoize filtered cards to avoid filtering on every render
+  const filteredCards = useMemo(() =>
     selectedFolder === "All"
       ? cards
-      : cards.filter((c) => (c.folder || "Uncategorized") === selectedFolder);
+      : cards.filter((c) => (c.folder || "Uncategorized") === selectedFolder),
+    [cards, selectedFolder]
+  );
 
   if (loading)
     return (
