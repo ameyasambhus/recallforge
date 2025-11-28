@@ -12,7 +12,11 @@ const userAuth = async (req: Request, res: Response, next: NextFunction) => {
     const tokenDecode = jwt.verify(token, process.env.JWT_SECRET as string) as { id: string };
     if (tokenDecode.id) {
       req.userId = tokenDecode.id;
-      const user = await userModel.findById(tokenDecode.id);
+      // Use lean() for faster read-only queries - returns plain JS objects instead of Mongoose documents
+      // Only select fields that are commonly needed to reduce data transfer
+      const user = await userModel.findById(tokenDecode.id)
+        .select('_id name email isAccountVerified')
+        .lean();
       if (!user) {
         return res.json({ success: false, message: "User not found" });
       }

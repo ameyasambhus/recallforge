@@ -32,14 +32,18 @@ const cardSchema = new mongoose.Schema(
   }
 );
 
+// Add indexes for common query patterns to improve performance
+cardSchema.index({ user: 1, dueDate: 1 }); // For getDueCards query
+cardSchema.index({ user: 1, folder: 1 }); // For folder filtering
+
 cardSchema.post('save', async function(doc){
-  const existingFolder=await folderModel.findOne({user:doc.user, name: doc.folder});
-  if(!existingFolder){
-    await folderModel.create({
-    user: doc.user,
-    name: doc.folder
-  });
-  }
+  // Use findOneAndUpdate with upsert to avoid separate find + create operations
+  // This is more efficient as it's a single atomic operation
+  await folderModel.findOneAndUpdate(
+    { user: doc.user, name: doc.folder },
+    { user: doc.user, name: doc.folder },
+    { upsert: true, setDefaultsOnInsert: true }
+  );
 });
 
 const cardModel = mongoose.model("Card", cardSchema);
