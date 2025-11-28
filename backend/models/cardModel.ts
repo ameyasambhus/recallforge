@@ -39,9 +39,10 @@ cardSchema.index({ user: 1, folder: 1 }); // For folder filtering
 cardSchema.post('save', async function(doc){
   // Use findOneAndUpdate with upsert to avoid separate find + create operations
   // This is more efficient as it's a single atomic operation
+  const folderData = { user: doc.user, name: doc.folder };
   await folderModel.findOneAndUpdate(
-    { user: doc.user, name: doc.folder },
-    { user: doc.user, name: doc.folder },
+    folderData,
+    folderData,
     { upsert: true, setDefaultsOnInsert: true }
   );
 });
