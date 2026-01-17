@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { ChevronLeft, ChevronRight, Trash2, Calendar, Folder } from "lucide-react";
+import { ChevronLeft, ChevronRight, Trash2, Calendar, Folder, Search, ArrowUpDown, X } from "lucide-react";
 
 const ExpandableText = ({ text, limit = 150 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -38,10 +38,15 @@ const AllCards = () => {
   const [selectedFolder, setSelectedFolder] = useState("All");
   const [availableFolders, setAvailableFolders] = useState(["All"]);
   const [totalCards, setTotalCards] = useState(0);
-  const [deletingId, setDeletingId] = useState(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [cardToDelete, setCardToDelete] = useState(null);
 
   const [selectedCard, setSelectedCard] = useState(null);
   const [limit, setLimit] = useState(10);
+  const [searchInput, setSearchInput] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortBy, setSortBy] = useState("dueDate");
+  const [sortOrder, setSortOrder] = useState("asc");
 
   const fetchCards = async () => {
     setLoading(true);
@@ -50,7 +55,10 @@ const AllCards = () => {
         params: {
           page,
           limit,
-          folder: selectedFolder === "All" ? undefined : selectedFolder
+          folder: selectedFolder === "All" ? undefined : selectedFolder,
+          search: searchTerm || undefined,
+          sortBy,
+          sortOrder
         }
       });
       
@@ -76,19 +84,57 @@ const AllCards = () => {
 
   useEffect(() => {
     fetchCards();
-  }, [page, selectedFolder, limit]);
+  }, [page, selectedFolder, limit, searchTerm, sortBy, sortOrder]);
 
-  const handleDelete = async (e, id) => {
+  const handleSearchClick = () => {
+    setSearchTerm(searchInput);
+    setPage(1);
+  };
+
+  const handleClearSearch = () => {
+    setSearchInput("");
+    setSearchTerm("");
+    setPage(1);
+  };
+
+  const handleSearchKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      handleSearchClick();
+    }
+  };
+
+  const handleSortChange = (field) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortBy(field);
+      setSortOrder("asc");
+    }
+    setPage(1);
+  };
+
+  const handleDeleteClick = (e, card) => {
     e.stopPropagation();
+    setCardToDelete(card);
+    setShowDeleteModal(true);
+  };
+
+  const handleConfirmDelete = async () => {
     try {
-      await axios.delete(`/api/card/${id}/delete`);
+      await axios.delete(`/api/card/${cardToDelete._id}/delete`);
       toast.success("Card deleted!");
       fetchCards();
-      setDeletingId(null);
-      if (selectedCard?._id === id) setSelectedCard(null);
+      setShowDeleteModal(false);
+      setCardToDelete(null);
+      if (selectedCard?._id === cardToDelete._id) setSelectedCard(null);
     } catch (err) {
       toast.error(err.message);
     }
+  };
+
+  const handleCancelDelete = () => {
+    setShowDeleteModal(false);
+    setCardToDelete(null);
   };
 
   // Helper to get range string
@@ -102,26 +148,87 @@ const AllCards = () => {
   return (
     <div className="w-full max-w-7xl mx-auto p-2 md:p-6 relative">
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-center mb-6 md:mb-8 gap-4">
-        <div className="text-center md:text-left">
-          <h1 className="text-2xl md:text-3xl font-bold text-white">Card Library</h1>
-          <p className="text-gray-400 mt-1 text-sm">Manage your {totalCards} flashcards</p>
+      <div className="flex flex-col gap-4 mb-6 md:mb-8">
+        <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+          <div className="text-center md:text-left">
+            <h1 className="text-2xl md:text-3xl font-bold text-white">Card Library</h1>
+            <p className="text-gray-400 mt-1 text-sm">
+              Manage your {totalCards} flashcards
+              {searchTerm && <span className="ml-2 text-blue-400">• Searching: "{searchTerm}"</span>}
+            </p>
+          </div>
+
+          {/* Filter */}
+          <div className="flex items-center gap-2 bg-[#1e2329] p-2 rounded-xl border border-white/5 shadow-inner">
+            <Folder className="w-4 h-4 text-gray-400 ml-2" />
+            <select
+              value={selectedFolder}
+              onChange={(e) => { setSelectedFolder(e.target.value); setPage(1); }}
+              className="bg-transparent text-sm text-gray-200 focus:outline-none p-1 min-w-[120px] md:min-w-[150px] cursor-pointer"
+            >
+              {availableFolders.map(f => (
+                <option key={f} value={f} className="bg-[#1f262d] text-gray-300">
+                  {f}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        {/* Filter */}
-        <div className="flex items-center gap-2 bg-[#1e2329] p-2 rounded-xl border border-white/5 shadow-inner">
-          <Folder className="w-4 h-4 text-gray-400 ml-2" />
-          <select
-            value={selectedFolder}
-            onChange={(e) => { setSelectedFolder(e.target.value); setPage(1); }}
-            className="bg-transparent text-sm text-gray-200 focus:outline-none p-1 min-w-[120px] md:min-w-[150px] cursor-pointer"
-          >
-            {availableFolders.map(f => (
-              <option key={f} value={f} className="bg-[#1f262d] text-gray-300">
-                {f}
-              </option>
-            ))}
-          </select>
+        {/* Search and Sort */}
+        <div className="flex flex-col md:flex-row gap-3">
+          {/* Search Bar */}
+          <div className="flex-1 relative">
+            <input
+              type="text"
+              placeholder="Search cards by question or answer..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyPress={handleSearchKeyPress}
+              className="w-full bg-[#1e2329] border border-white/5 rounded-xl pl-10 pr-24 py-2.5 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-blue-500/30 focus:ring-1 focus:ring-blue-500/20 transition-all"
+            />
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2 pointer-events-none" />
+            <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex gap-1">
+              {searchTerm && (
+                <button
+                  onClick={handleClearSearch}
+                  className="p-2 hover:bg-red-500/10 rounded-lg transition-colors group"
+                  title="Clear search"
+                >
+                  <X className="w-4 h-4 text-gray-400 group-hover:text-red-400 transition-colors" />
+                </button>
+              )}
+              <button
+                onClick={handleSearchClick}
+                className="p-2 hover:bg-blue-500/10 rounded-lg transition-colors group"
+                title="Search"
+              >
+                <Search className="w-4 h-4 text-gray-400 group-hover:text-blue-400 transition-colors" />
+              </button>
+            </div>
+          </div>
+
+          {/* Sort Controls */}
+          <div className="flex items-center gap-2 bg-[#1e2329] p-2 rounded-xl border border-white/5">
+            <ArrowUpDown className="w-4 h-4 text-gray-400 ml-2" />
+            <select
+              value={sortBy}
+              onChange={(e) => { setSortBy(e.target.value); setPage(1); }}
+              className="bg-transparent text-sm text-gray-200 focus:outline-none p-1 cursor-pointer"
+            >
+              <option value="dueDate" className="bg-[#1f262d] text-gray-300">Sort by Due Date</option>
+              <option value="question" className="bg-[#1f262d] text-gray-300">Sort by Question</option>
+              <option value="folder" className="bg-[#1f262d] text-gray-300">Sort by Folder</option>
+              <option value="createdAt" className="bg-[#1f262d] text-gray-300">Sort by Created</option>
+            </select>
+            <button
+              onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+              className="px-2 py-1 text-xs font-medium text-gray-300 hover:text-white transition-colors"
+              title={sortOrder === "asc" ? "Ascending" : "Descending"}
+            >
+              {sortOrder === "asc" ? "↑" : "↓"}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -164,21 +271,13 @@ const AllCards = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      {deletingId === card._id ? (
-                        <div className="flex items-center justify-end gap-2 animate-fadeIn" onClick={(e) => e.stopPropagation()}>
-                          <span className="text-xs text-red-300">Sure?</span>
-                          <button onClick={(e) => handleDelete(e, card._id)} className="text-red-500 hover:text-red-400 font-bold text-xs border border-red-500/30 bg-red-500/10 px-2 py-1 rounded transition-all">Yes</button>
-                          <button onClick={(e) => { e.stopPropagation(); setDeletingId(null); }} className="text-gray-400 hover:text-white text-xs px-2 py-1 transition-all">No</button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setDeletingId(card._id); }}
-                          className="p-2 hover:bg-red-500/10 text-gray-500 hover:text-red-400 rounded-lg transition-all opacity-60 group-hover:opacity-100"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
+                      <button
+                        onClick={(e) => handleDeleteClick(e, card)}
+                        className="p-2 hover:bg-red-500/10 hover:text-red-400 rounded-lg transition-all opacity-60 group-hover:opacity-100"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4 text-red-500" />
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -312,6 +411,47 @@ const AllCards = () => {
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && cardToDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn"
+          onClick={handleCancelDelete}
+        >
+          <div
+            className="bg-[#1e2329] border border-white/10 rounded-2xl shadow-2xl w-full max-w-md p-6"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <Trash2 className="w-6 h-6 text-red-500" />
+              <h3 className="text-xl font-bold text-white">Delete Card</h3>
+            </div>
+            <p className="text-gray-300 mb-2">
+              Are you sure you want to delete this card?
+            </p>
+            <div className="p-3 rounded-lg bg-[#272e36] border border-white/5 mb-6">
+              <p className="text-sm text-gray-400 mb-1">Question:</p>
+              <p className="text-white font-medium line-clamp-2">{cardToDelete.question}</p>
+            </div>
+            <p className="text-red-400 text-sm mb-6">This action cannot be undone.</p>
+            <div className="flex gap-3 justify-end">
+              <button
+                className="px-4 py-2 rounded-lg bg-[#272e36] text-gray-300 hover:bg-[#2a3441] transition-colors border border-white/5"
+                onClick={handleCancelDelete}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-colors flex items-center gap-2 font-medium"
+                onClick={handleConfirmDelete}
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete
+              </button>
             </div>
           </div>
         </div>

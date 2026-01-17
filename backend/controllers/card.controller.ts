@@ -52,17 +52,40 @@ export const getAllCards = async (req: Request, res: Response) => {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
     const folder = req.query.folder as string;
+    const search = req.query.search as string;
+    const sortBy = req.query.sortBy as string || "dueDate";
+    const sortOrder = req.query.sortOrder as string || "asc";
     const skip = (page - 1) * limit;
 
-    console.log(`getAllCards: page=${page}, limit=${limit}, skip=${skip}, folder=${folder}`);
+    console.log(`getAllCards: page=${page}, limit=${limit}, skip=${skip}, folder=${folder}, search=${search}, sortBy=${sortBy}, sortOrder=${sortOrder}`);
 
     const query: any = { user: req.user._id };
+    
+    // Folder filter
     if (folder && folder !== "All") {
       query.folder = folder === "Uncategorized" ? { $in: [null, ""] } : folder;
     }
 
+    // Search filter - combine with $and to ensure user filter is applied
+    if (search && search.trim()) {
+      const searchRegex = { $regex: search.trim(), $options: 'i' };
+      query.$or = [
+        { question: searchRegex },
+        { answer: searchRegex }
+      ];
+    }
+
+    // Sort configuration
+    const sortConfig: any = {};
+    const validSortFields = ['question', 'folder', 'dueDate', 'createdAt'];
+    const sortField = validSortFields.includes(sortBy) ? sortBy : 'dueDate';
+    sortConfig[sortField] = sortOrder === 'desc' ? -1 : 1;
+
+    console.log('MongoDB query:', JSON.stringify(query));
+    console.log('Sort config:', JSON.stringify(sortConfig));
+
     const cards = await cardModel.find(query)
-      .sort({ createdAt: -1 })
+      .sort(sortConfig)
       .skip(skip)
       .limit(limit);
 
