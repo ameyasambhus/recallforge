@@ -49,8 +49,37 @@ export const getDueCards = async (req: Request, res: Response) => {
 };
 export const getAllCards = async (req: Request, res: Response) => {
   try {
-    const cards = await cardModel.find({ user: req.user._id });
-    res.json(cards);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const folder = req.query.folder as string;
+    const skip = (page - 1) * limit;
+
+    console.log(`getAllCards: page=${page}, limit=${limit}, skip=${skip}, folder=${folder}`);
+
+    const query: any = { user: req.user._id };
+    if (folder && folder !== "All") {
+      query.folder = folder === "Uncategorized" ? { $in: [null, ""] } : folder;
+    }
+
+    const cards = await cardModel.find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    console.log(`getAllCards returning ${cards.length} cards`);
+
+    const total = await cardModel.countDocuments(query);
+
+    // Get all unique folders for the filter dropdown
+    const folders = await cardModel.distinct("folder", { user: req.user._id });
+
+    res.json({
+      cards,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
+      totalCards: total,
+      folders: ["All", ...folders.filter(f => f), "Uncategorized"],
+    });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : "An error occurred" });
   }
@@ -118,7 +147,7 @@ export const deleteCard = async (req: Request, res: Response) => {
 export const generateAnswer = async (req: Request, res: Response) => {
   try {
     const { question } = req.body;
-    
+
     if (!question) {
       return res.status(400).json({ success: false, error: "Question is required" });
     }
