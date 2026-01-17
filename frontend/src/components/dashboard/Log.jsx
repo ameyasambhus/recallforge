@@ -1,8 +1,10 @@
-import React, { useContext } from "react";
+import React, { useContext, useEffect } from "react";
 import { AppContent } from "../../context/AppContext";
 import { useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
+
+const LOG_STORAGE_KEY = "recallforge_log_draft";
 
 const Log = () => {
   const { userData } = useContext(AppContent);
@@ -10,6 +12,27 @@ const Log = () => {
   const [answer, setAnswer] = useState("");
   const [folder, setFolder] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+
+  // Load from localStorage on mount
+  useEffect(() => {
+    const savedData = localStorage.getItem(LOG_STORAGE_KEY);
+    if (savedData) {
+      try {
+        const { question: savedQuestion, answer: savedAnswer, folder: savedFolder } = JSON.parse(savedData);
+        if (savedQuestion) setQuestion(savedQuestion);
+        if (savedAnswer) setAnswer(savedAnswer);
+        if (savedFolder) setFolder(savedFolder);
+      } catch (error) {
+        console.error("Failed to load draft from localStorage:", error);
+      }
+    }
+  }, []);
+
+  // Save to localStorage whenever question, answer, or folder changes
+  useEffect(() => {
+    const dataToSave = { question, answer, folder };
+    localStorage.setItem(LOG_STORAGE_KEY, JSON.stringify(dataToSave));
+  }, [question, answer, folder]);
 
   const generateAnswer = async () => {
     if (!question.trim()) {
@@ -93,6 +116,8 @@ const Log = () => {
         setQuestion("");
         setAnswer("");
         setFolder("");
+        // Clear localStorage after successful submission
+        localStorage.removeItem(LOG_STORAGE_KEY);
       } else {
         toast.error(data.message);
         console.log(data.message);
