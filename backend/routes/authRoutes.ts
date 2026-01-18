@@ -8,6 +8,7 @@ import {
   verifyEmail,
   sendResetOtp,
   resetPassword,
+  verifyRecaptcha,
 } from "../controllers/auth.controller.js";
 import userAuth from "../middleware/userAuth.js";
 const authRouter = express.Router();
@@ -20,4 +21,5 @@ authRouter.post("/verify-account", verifyEmail);
 authRouter.get("/is-auth", userAuth, isAuthenticated);
 authRouter.post("/send-reset-otp", sendResetOtp);
 authRouter.post("/reset-password", resetPassword);
+authRouter.post("/verify-recaptcha", verifyRecaptcha);
 export default authRouter;

@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { Request, Response } from "express";
 import { loginService, registerService, resetService, verifyService } from "../services/auth.service.js";
+import axios from "axios";
 
 export const register = async (req: Request, res: Response) => {
   const { name, email, password } = req.body;
@@ -19,7 +20,7 @@ export const register = async (req: Request, res: Response) => {
         message: "User already exists",
       });
     }
-    const {userId } = await registerService.registerFunc(name, email, password);
+    const { userId } = await registerService.registerFunc(name, email, password);
 
     res.status(201).json({
       success: true,
@@ -96,7 +97,7 @@ export const logout = async (req: Request, res: Response) => {
 };
 
 export const sendVerifyOtp = async (req: Request, res: Response) => {
-  const { email} = req.body;
+  const { email } = req.body;
   if (!email) {
     return res.json({
       success: false,
@@ -112,10 +113,10 @@ export const sendVerifyOtp = async (req: Request, res: Response) => {
     } catch (otpError) {
       // OTP sending failed, delete the unverified user
       await verifyService.deleteUnverifiedUser(user._id);
-      res.json({ 
-        success: false, 
+      res.json({
+        success: false,
         message: "Failed to send OTP. Account has been removed. Please try registering again.",
-        accountDeleted: true 
+        accountDeleted: true
       });
     }
   } catch (error) {
@@ -196,3 +197,23 @@ export const resetPassword = async (req: Request, res: Response) => {
     res.json({ success: false, message: error instanceof Error ? error.message : "An error occurred" });
   }
 };
+
+export const verifyRecaptcha = async (req: Request, res: Response) => {
+  const { token } = req.body;
+  if (!token) {
+    return res.json({ success: false, message: "Token is required" });
+  }
+  try {
+    const response = await axios.post(
+      `https://www.google.com/recaptcha/api/siteverify?secret=${process.env.RECAPTCHA_SECRET_KEY}&response=${token}`
+    );
+    if (response.data.success) {
+      return res.json({ success: true });
+    } else {
+      return res.json({ success: false, message: "Invalid reCAPTCHA token" });
+    }
+  } catch (error) {
+    res.json({ success: false, message: error instanceof Error ? error.message : "An error occurred" });
+  }
+};
+

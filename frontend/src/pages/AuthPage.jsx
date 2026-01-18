@@ -1,9 +1,10 @@
-import { use, useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
 import { AppContent } from "../context/AppContext";
 import axios from "axios";
 import toast from "react-hot-toast";
+import Recaptcha from "../components/Recaptcha";
 
 const AuthPage = () => {
   const navigate = useNavigate();
@@ -14,6 +15,8 @@ const AuthPage = () => {
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
+  const [showLoginCaptcha, setShowLoginCaptcha] = useState(false);
+  const [showSignupCaptcha, setShowSignupCaptcha] = useState(false);
   const { setLoggedIn, getUserData, userData, loggedIn } =
     useContext(AppContent);
 
@@ -33,6 +36,9 @@ const AuthPage = () => {
     if (newTab === "login") {
       setOtpSent(false);
       setOtp("");
+      setShowSignupCaptcha(false);
+    } else {
+      setShowLoginCaptcha(false);
     }
   };
 
@@ -80,14 +86,14 @@ const AuthPage = () => {
   const verifyOtp = async () => {
     try {
       axios.defaults.withCredentials = true;
-      const { data } = await axios.post("/api/auth/verify-account", {email, otp });
+      const { data } = await axios.post("/api/auth/verify-account", { email, otp });
 
       if (data.success) {
         toast.success(data.message);
         setTab("login");
       } else {
         toast.error(data.message);
-          setOtp("");
+        setOtp("");
       }
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to verify OTP");
@@ -95,25 +101,77 @@ const AuthPage = () => {
       // Reset form on error
       setOtpSent(false);
       setOtp("");
+      setShowSignupCaptcha(false);
     }
   };
 
-  const handleSubmit = async () => {
+  const handleLoginSubmit = (e) => {
+    e.preventDefault();
+    if (!email || !password) {
+      toast.error("Please fill in all fields");
+      return;
+    }
+    setShowLoginCaptcha(true);
+  };
+
+  const onLoginVerify = async (token) => {
     try {
+      // Verify captcha
+      const verifyResponse = await axios.post("/api/auth/verify-recaptcha", { token });
+      if (!verifyResponse.data.success) {
+        toast.error(verifyResponse.data.message || "Captcha verification failed");
+        window.grecaptcha?.reset();
+        return;
+      }
+
       axios.defaults.withCredentials = true;
-        const { data } = await axios.post("/api/auth/login", {
-          email,
-          password,
-        });
-        if (data.success) {
-          setLoggedIn(true);
-          navigate("/app/log");
-        } else {
-          toast.error(data.message);
-        }
+      const { data } = await axios.post("/api/auth/login", {
+        email,
+        password,
+      });
+      if (data.success) {
+        setLoggedIn(true);
+        navigate("/app/log");
+      } else {
+        toast.error(data.message);
+        window.grecaptcha?.reset();
+      }
     } catch (error) {
       toast.error("An error occurred. Please try again.");
       console.error("Error during authentication:", error);
+      window.grecaptcha?.reset();
+    }
+  };
+
+  const handleSignupSubmit = (e) => {
+    e.preventDefault();
+    if (otpSent) {
+      // Verify OTP stage - show captcha
+      if (!otp || otp.length !== 6) {
+        toast.error("Please enter a valid OTP");
+        return;
+      }
+      setShowSignupCaptcha(true);
+    } else {
+      // Send OTP stage - No Recaptcha
+      sendOtp();
+    }
+  };
+
+  const onSignupVerify = async (token) => {
+    try {
+      const verifyResponse = await axios.post("/api/auth/verify-recaptcha", { token });
+      if (!verifyResponse.data.success) {
+        toast.error(verifyResponse.data.message || "Captcha verification failed");
+        window.grecaptcha?.reset();
+        return;
+      }
+
+      await verifyOtp();
+    } catch (error) {
+      console.error("Captcha error", error);
+      toast.error("Captcha verification failed");
+      window.grecaptcha?.reset();
     }
   };
 
@@ -133,8 +191,8 @@ const AuthPage = () => {
         <div className="flex mb-6">
           <button
             className={`btn btn-primary w-1/2 py-2 mr-1 text-sm font-medium rounded-l ${tab === "login"
-                ? "bg-black text-white"
-                : "bg-zinc-800 text-gray-400"
+              ? "bg-black text-white"
+              : "bg-zinc-800 text-gray-400"
               }`}
             onClick={() => handleTabSwitch("login")}
           >
@@ -142,8 +200,8 @@ const AuthPage = () => {
           </button>
           <button
             className={`btn btn-primary w-1/2 py-2  text-sm font-medium rounded-r ${tab === "signup"
-                ? "bg-black text-white"
-                : "bg-zinc-800 text-gray-400"
+              ? "bg-black text-white"
+              : "bg-zinc-800 text-gray-400"
               }`}
             onClick={() => handleTabSwitch("signup")}
           >
@@ -152,7 +210,7 @@ const AuthPage = () => {
         </div>
 
         {tab === "login" ? (
-          <div>
+          <form onSubmit={handleLoginSubmit}>
             <div>
               <label className="block text-sm mb-1" htmlFor="login-email">
                 Email
@@ -201,15 +259,21 @@ const AuthPage = () => {
             </div>
 
             <br />
-            <button
-              className="btn btn-primary w-full py-2 rounded bg-gradient-to-r from-[#605dff] to-[#2f2da5] font-semibold"
-              onClick={handleSubmit}
-            >
-              Sign In
-            </button>
-          </div>
+            {showLoginCaptcha ? (
+              <div className="mb-4 flex justify-center">
+                <Recaptcha onVerify={onLoginVerify} />
+              </div>
+            ) : (
+              <button
+                type="submit"
+                className="btn btn-primary w-full py-2 rounded bg-gradient-to-r from-[#605dff] to-[#2f2da5] font-semibold"
+              >
+                Sign In
+              </button>
+            )}
+          </form>
         ) : (
-          <div>
+          <form onSubmit={handleSignupSubmit}>
             <div>
               <label className="block text-sm mb-1" htmlFor="first-name">
                 Name
@@ -268,8 +332,8 @@ const AuthPage = () => {
 
             {!otpSent ? (
               <button
+                type="submit"
                 className="w-full py-2 rounded bg-gradient-to-r from-[#605dff] to-[#2826a1] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                onClick={sendOtp}
                 disabled={!name || !email || !password}
               >
                 Send OTP
@@ -291,16 +355,22 @@ const AuthPage = () => {
                   />
                 </div>
                 <br />
-                <button
-                  className="w-full py-2 rounded bg-gradient-to-r from-[#605dff] to-[#2826a1] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                  onClick={verifyOtp}
-                  disabled={!otp || otp.length !== 6}
-                >
-                  Verify OTP & Create Account
-                </button>
+                {showSignupCaptcha ? (
+                  <div className="mb-4 flex justify-center">
+                    <Recaptcha onVerify={onSignupVerify} />
+                  </div>
+                ) : (
+                  <button
+                    type="submit"
+                    className="w-full py-2 rounded bg-gradient-to-r from-[#605dff] to-[#2826a1] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={!otp || otp.length !== 6}
+                  >
+                    Verify OTP & Create Account
+                  </button>
+                )}
               </>
             )}
-          </div>
+          </form>
         )}
       </div>
     </div>

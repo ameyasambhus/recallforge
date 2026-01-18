@@ -17,6 +17,7 @@
     "autoprefixer": "^10.4.21",
     "axios": "^1.11.0",
     "daisyui": "^5.1.6",
+    "dotenv": "^17.2.3",
     "eslint": "^9.30.1",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",

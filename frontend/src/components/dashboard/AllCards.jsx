@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { ChevronLeft, ChevronRight, Trash2, Calendar, Folder, Search, ArrowUpDown, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Trash2, Calendar, Folder, Search, ArrowUpDown, X, Edit2 } from "lucide-react";
 
 const ExpandableText = ({ text, limit = 150 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -41,6 +41,11 @@ const AllCards = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [cardToDelete, setCardToDelete] = useState(null);
 
+  // Edit State
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingCard, setEditingCard] = useState(null);
+  const [editForm, setEditForm] = useState({ question: "", answer: "", folder: "" });
+
   const [selectedCard, setSelectedCard] = useState(null);
   const [limit, setLimit] = useState(10);
   const [searchInput, setSearchInput] = useState("");
@@ -61,7 +66,7 @@ const AllCards = () => {
           sortOrder
         }
       });
-      
+
       // Handle pagination response
       setCards(data.cards || []);
       setTotalPages(data.totalPages || 1);
@@ -135,6 +140,40 @@ const AllCards = () => {
   const handleCancelDelete = () => {
     setShowDeleteModal(false);
     setCardToDelete(null);
+  };
+
+  const handleEditClick = (e, card) => {
+    e.stopPropagation();
+    setEditingCard(card);
+    setEditForm({
+      question: card.question,
+      answer: card.answer,
+      folder: card.folder || ""
+    });
+    setShowEditModal(true);
+  };
+
+  const handleUpdateCard = async () => {
+    try {
+      if (!editForm.question || !editForm.answer) {
+        toast.error("Question and Answer are required");
+        return;
+      }
+
+      const res = await axios.put(`/api/card/${editingCard._id}/update`, editForm);
+
+      toast.success("Card updated successfully!");
+      setShowEditModal(false);
+      setEditingCard(null);
+      fetchCards();
+
+      // Update selected card viewing if applicable
+      if (selectedCard?._id === editingCard._id) {
+        setSelectedCard(res.data);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Failed to update card");
+    }
   };
 
   // Helper to get range string
@@ -271,13 +310,22 @@ const AllCards = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button
-                        onClick={(e) => handleDeleteClick(e, card)}
-                        className="p-2 hover:bg-red-500/10 hover:text-red-400 rounded-lg transition-all opacity-60 group-hover:opacity-100"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4 text-red-500" />
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={(e) => handleEditClick(e, card)}
+                          className="p-2 hover:bg-blue-500/10 hover:text-blue-400 rounded-lg transition-all opacity-60 group-hover:opacity-100"
+                          title="Edit"
+                        >
+                          <Edit2 className="w-4 h-4 text-blue-500" />
+                        </button>
+                        <button
+                          onClick={(e) => handleDeleteClick(e, card)}
+                          className="p-2 hover:bg-red-500/10 hover:text-red-400 rounded-lg transition-all opacity-60 group-hover:opacity-100"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-500" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -409,6 +457,84 @@ const AllCards = () => {
                     <span className="text-xs text-gray-500 block mb-1">Due Date</span>
                     <span className="text-gray-300">{new Date(selectedCard.dueDate).toLocaleDateString()}</span>
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Card Modal */}
+      {showEditModal && editingCard && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn"
+          onClick={() => setShowEditModal(false)}
+        >
+          <div
+            className="bg-[#1e2329] border border-white/10 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="p-6">
+              <div className="flex justify-between items-start mb-6">
+                <h2 className="text-xl font-bold text-white">Edit Card</h2>
+                <button
+                  onClick={() => setShowEditModal(false)}
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm text-gray-400">Question</label>
+                  <textarea
+                    value={editForm.question}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, question: e.target.value }))}
+                    className="w-full rounded-xl border border-white/10 bg-[#272e36] p-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:ring focus:ring-indigo-500/20 outline-none transition-all"
+                    rows={3}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm text-gray-400">Answer</label>
+                  <textarea
+                    value={editForm.answer}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, answer: e.target.value }))}
+                    className="w-full rounded-xl border border-white/10 bg-[#272e36] p-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:ring focus:ring-indigo-500/20 outline-none transition-all"
+                    rows={5}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm text-gray-400">Folder</label>
+                  <input
+                    type="text"
+                    list="folderList"
+                    value={editForm.folder}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, folder: e.target.value }))}
+                    className="w-full rounded-xl border border-white/10 bg-[#272e36] p-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:ring focus:ring-indigo-500/20 outline-none transition-all"
+                  />
+                  <datalist id="folderList">
+                    {availableFolders.filter(f => f !== "All").map(f => (
+                      <option key={f} value={f} />
+                    ))}
+                  </datalist>
+                </div>
+
+                <div className="flex gap-3 justify-end mt-6">
+                  <button
+                    className="px-4 py-2 rounded-lg bg-[#272e36] text-gray-300 hover:bg-[#2a3441] transition-colors border border-white/5"
+                    onClick={() => setShowEditModal(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors font-medium shadow-lg shadow-indigo-500/20"
+                    onClick={handleUpdateCard}
+                  >
+                    Save Changes
+                  </button>
                 </div>
               </div>
             </div>

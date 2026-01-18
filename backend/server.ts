@@ -6,6 +6,7 @@ import connectDB from "./config/mongodb.js";
 import authRouter from "./routes/authRoutes.js";
 import cardRouter from "./routes/cardRoutes.js";
 import userRouter from "./routes/userRoutes.js";
+import dataRouter from "./routes/dataRoutes.js";
 import rateLimiter from "./middleware/rateLimiter.js";
 import userAuth from "./middleware/userAuth.js";
 import { fileURLToPath } from "url";
@@ -22,8 +23,8 @@ const app = express();
 const port = process.env.PORT || 4000;
 connectDB();
 
-const allowedOrigins = process.env.NODE_ENV === "production" 
-  ? [process.env.FRONTEND_URL || "https://recallforge.onrender.com"] 
+const allowedOrigins = process.env.NODE_ENV === "production"
+  ? [process.env.FRONTEND_URL || "https://recallforge.onrender.com"]
   : ["http://localhost:5173"];
 
 app.use(express.json());
@@ -32,6 +33,7 @@ app.use(cors({ origin: allowedOrigins, credentials: true }));
 
 app.use("/api/card", rateLimiter, cardRouter);
 app.use("/api/user", rateLimiter, userRouter);
+app.use("/api/data", rateLimiter, dataRouter);
 
 app.use("/api/auth", authRouter);
 
