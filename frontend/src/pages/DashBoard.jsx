@@ -12,7 +12,7 @@ import { toast } from "react-hot-toast";
 import { useState, useRef } from "react";
 
 const TopNav = () => {
-  const { userData, setUserData, setLoggedIn } = useContext(AppContent);
+  const { userData, setUserData, setLoggedIn, logout } = useContext(AppContent);
   const navigate = useNavigate();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -28,22 +28,6 @@ const TopNav = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const logout = async () => {
-    try {
-      axios.defaults.withCredentials = true;
-      const { data } = await axios.post("/api/auth/logout");
-      if (data.success) {
-        setLoggedIn(false);
-        setUserData(false);
-        navigate("/");
-      } else {
-        toast.error(data.message);
-      }
-    } catch (error) {
-      toast.error("An error occurred while logging out.");
-      console.error("Error logging out:", error);
-    }
-  };
 
   const exportData = async () => {
     try {
@@ -191,7 +175,7 @@ const TopNav = () => {
                 
                 <button
                   onClick={() => {
-                    logout();
+                    logout(navigate);
                     setIsDropdownOpen(false);
                   }}
                   className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 hover:text-red-500 text-left"

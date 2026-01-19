@@ -7,27 +7,11 @@ import { toast } from "react-hot-toast";
 import Heatmap from "./Heatmap";
 
 const Setting = () => {
-  const { userData, setUserData, setLoggedIn } = useContext(AppContent);
+  const { userData, setUserData, setLoggedIn, logout } = useContext(AppContent);
   const navigate = useNavigate();
   const [showDeleteModal, setShowDeleteModal] = React.useState(false);
   const [confirmationEmail, setConfirmationEmail] = React.useState("");
 
-  const logout = async () => {
-    try {
-      axios.defaults.withCredentials = true;
-      const { data } = await axios.post("/api/auth/logout");
-      if (data.success) {
-        setLoggedIn(false);
-        setUserData(false);
-        navigate("/");
-      } else {
-        toast.error(data.message);
-      }
-    } catch (error) {
-      toast.error("An error occurred while logging out.");
-      console.error("Error logging out:", error);
-    }
-  };
 
   const deleteAccount = async () => {
     if (
@@ -43,7 +27,7 @@ const Setting = () => {
       const { data } = await axios.delete("/api/user/delete");
       if (data.success) {
         toast.success("Account deleted successfully.");
-        logout();
+        logout(navigate);
       } else {
         toast.error(data.message);
       }

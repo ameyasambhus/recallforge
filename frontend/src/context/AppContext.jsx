@@ -49,7 +49,30 @@ export const AppContextProvider = (props) => {
     getAuthState();
   }, []);
 
-  const value = { loggedIn, userData, setLoggedIn, setUserData, getUserData };
+  const logout = async (navigate) => {
+    try {
+      const { data } = await axios.post("/api/auth/logout");
+      if (data.success) {
+        setLoggedIn(false);
+        setUserData(false);
+        if (navigate) navigate("/");
+      } else {
+        toast.error(data.message || "Logout failed");
+      }
+    } catch (error) {
+      toast.error("An error occurred while logging out.");
+      console.error("Error logging out:", error);
+    }
+  };
+
+  const value = {
+    loggedIn,
+    userData,
+    setLoggedIn,
+    setUserData,
+    getUserData,
+    logout,
+  };
   return (
     <AppContent.Provider value={value}>{props.children}</AppContent.Provider>
   );
