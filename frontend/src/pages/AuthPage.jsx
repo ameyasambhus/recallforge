@@ -131,6 +131,7 @@ const AuthPage = () => {
       });
       if (data.success) {
         setLoggedIn(true);
+        await getUserData();
         navigate("/app/log");
       } else {
         toast.error(data.message);

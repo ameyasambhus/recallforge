@@ -1,5 +1,7 @@
 {
-  "watch": ["backend"],
+  "watch": [
+    "."
+  ],
   "ext": "ts,json",
   "exec": "tsx server.ts"
 }
