@@ -4,15 +4,13 @@ import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
 
+import Heatmap from "./Heatmap";
+
 const Setting = () => {
   const { userData, setUserData, setLoggedIn } = useContext(AppContent);
   const navigate = useNavigate();
   const [showDeleteModal, setShowDeleteModal] = React.useState(false);
   const [confirmationEmail, setConfirmationEmail] = React.useState("");
-
-  const navigateToReset = async () => {
-    navigate("/reset-pass");
-  };
 
   const logout = async () => {
     try {
@@ -55,111 +53,30 @@ const Setting = () => {
     }
   };
 
-  const exportData = async () => {
-    try {
-      const { data } = await axios.get("/api/data/export");
-      if (data.success) {
-        const jsonString = JSON.stringify(data.data, null, 2);
-        const blob = new Blob([jsonString], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `recallforge_backup_${new Date().toISOString().split("T")[0]
-          }.json`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        toast.success("Data exported successfully");
-      } else {
-        toast.error(data.message);
-      }
-    } catch (error) {
-      console.error("Export error:", error);
-      toast.error("Failed to export data");
-    }
-  };
-
-  const importData = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const jsonData = JSON.parse(e.target.result);
-        const { data } = await axios.post("/api/data/import", {
-          data: jsonData,
-        });
-        if (data.success) {
-          toast.success(data.message);
-          // Optional: Reload data or notify user
-        } else {
-          toast.error(data.message);
-        }
-      } catch (error) {
-        console.error("Import error:", error);
-        toast.error("Invalid JSON file or import failed");
-      }
-    };
-    reader.readAsText(file);
-    // Reset input so same file can be selected again if needed
-    event.target.value = "";
-  };
-
   return (
     <>
-      <div className="w-full max-w-2xl rounded-2xl border border-white/10 bg-[#272e36] p-8 shadow-lg">
+      <div className="w-full rounded-2xl border border-white/10 bg-[#272e36] p-8 shadow-lg">
         <h2 className="mb-4 text-center text-2xl font-semibold text-white">
           Settings
         </h2>
-        <br />
-        {/* Email verification removed - all users must verify during registration */}
-
-        <div className="space-y-3">
-          <button
-            onClick={navigateToReset}
-            className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white shadow-md hover:bg-indigo-500"
-          >
-            Change Password
-          </button>
-        </div>
-        <br />
-
-        <div className="space-y-3">
-          <button
-            onClick={exportData}
-            className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white shadow-md hover:bg-indigo-500"
-          >
-            Export Data (JSON)
-          </button>
-
-          <label className="block w-full cursor-pointer rounded-xl bg-indigo-600 px-4 py-3 text-center font-medium text-white shadow-md hover:bg-indigo-500">
-            Import Data (JSON)
-            <input
-              type="file"
-              accept=".json"
-              onChange={importData}
-              className="hidden"
-            />
-          </label>
-        </div>
-        <br />
-
-        <div className="space-y-3">
-          <button
-            onClick={logout}
-            className="w-full rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white shadow-md hover:bg-indigo-500"
-          >
-            Log Out
-          </button>
-        </div>
-        <br />
-
-        <div className="space-y-3 border-t border-white/10 pt-6">
+        
+        {userData?.reviewHistory && (
+          <div className="mb-8">
+            <h3 className="text-lg font-medium text-white mb-2 ml-1">Activity</h3>
+            <div className="p-4 rounded-xl bg-neutral-900/50 border border-white/5">
+              <Heatmap reviewHistory={userData.reviewHistory} />
+            </div>
+          </div>
+        )}
+        
+        <div className="space-y-3 pt-4 border-t border-white/10">
           <h3 className="mb-2 text-lg font-medium text-red-500">Danger Zone</h3>
+          <p className="text-sm text-neutral-400 mb-4">
+            Once you delete your account, there is no going back. Please be certain.
+          </p>
           <button
             onClick={() => setShowDeleteModal(true)}
-            className="w-full rounded-xl bg-red-600 px-4 py-3 font-medium text-white shadow-md hover:bg-red-500 transition-colors"
+            className="w-full sm:w-auto rounded-xl bg-red-600/10 border border-red-600/50 px-6 py-2.5 font-medium text-red-500 shadow-md hover:bg-red-600 hover:text-white transition-all duration-200"
           >
             Delete Account
           </button>

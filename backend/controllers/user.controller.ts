@@ -16,6 +16,8 @@ export const getUserData = async (req: Request, res: Response) => {
         name: user.name,
         email: user.email,
         isAccountVerified: user.isAccountVerified,
+        currentStreak: user.currentStreak,
+        reviewHistory: user.reviewHistory instanceof Map ? Object.fromEntries(user.reviewHistory) : user.reviewHistory,
       },
     });
   } catch (error) {

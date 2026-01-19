@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import cardModel from "../models/cardModel.js";
+import userModel from "../models/userModel.js";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from 'dotenv';
 dotenv.config()
@@ -35,9 +36,37 @@ export const updateCard = async (req: Request, res: Response) => {
     res.status(400).json({ error: err instanceof Error ? err.message : "An error occurred" });
   }
 };
+// Helper to get start of today in IST
+const getISTStartOfDay = () => {
+  const now = new Date();
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+  const istOffset = 5.5 * 60 * 60 * 1000; // +5:30
+  const istTime = new Date(utc + istOffset);
+  
+  // Reset to 00:00:00 IST
+  istTime.setHours(0, 0, 0, 0);
+  
+  // Convert back to UTC timestamp for the Date object
+  // We want the Moment in Time that corresponds to 00:00:00 IST
+  // istTime (as generic date) represents X timestamp.
+  // X - offset = UTC timestamp.
+  return new Date(istTime.getTime() - istOffset);
+};
+
+// Helper to get YYYY-MM-DD string in IST
+const getISTDateStr = (date: Date = new Date()) => {
+  return date.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+};
+
 export const getDueCards = async (req: Request, res: Response) => {
   try {
-    const today = new Date(new Date().setHours(0, 0, 0, 0)); // local start of today
+    const today = getISTStartOfDay(); // 00:00:00 IST
+    // We want all cards where dueDate <= Now (or beginning of today)
+    // Actually, usually if dueDate is 00:00:00 IST, checking <= today includes it.
+    
+    // NOTE: If using $lte: today, and today is 00:00:00 IST.
+    // Ensure dueDate is also stored as 00:00:00 IST.
+    
     const cards = await cardModel.find({
       user: req.user._id,
       dueDate: { $lte: today },
@@ -137,9 +166,11 @@ export const reviewCard = async (req: Request, res: Response) => {
       }
     }
 
-    const nextDue = new Date();
+    // Calculate Next Due Date in IST
+    const istStartOfToday = getISTStartOfDay();
+    const nextDue = new Date(istStartOfToday);
     nextDue.setDate(nextDue.getDate() + interval);
-    nextDue.setHours(0, 0, 0, 0);
+    // nextDue is now 00:00:00 IST on the future date
 
     card.EF = EF;
     card.repetitions = repetitions;
@@ -147,6 +178,66 @@ export const reviewCard = async (req: Request, res: Response) => {
     card.dueDate = nextDue;
 
     await card.save();
+
+    // Update Streak and Review History
+    const user = await userModel.findById(req.user._id);
+    if (user) {
+      // Logic:
+      // Compare "Today IST string" with "LastReview IST string"
+      const todayStr = getISTDateStr(new Date()); // IST YYYY-MM-DD
+      const lastReviewStr = user.lastReviewDate ? getISTDateStr(new Date(user.lastReviewDate)) : null;
+
+      if (todayStr !== lastReviewStr) {
+        // Different days. Check if consecutive.
+        // Convert strings to dates for math? Or just generic subtraction?
+        // Let's use Date objects at 00:00 IST for math.
+        const todayIST = getISTStartOfDay();
+        const lastReviewIST = user.lastReviewDate ? new Date(user.lastReviewDate) : null;
+        
+        // Align lastReviewIST to 00:00 IST if it exists? 
+        // We can just re-calculate from lastReviewStr
+        let isConsecutive = false;
+        if (lastReviewStr) {
+            const d1 = new Date(lastReviewStr); // "YYYY-MM-DD" treated as UTC?
+            // Actually, comparing strings is safer for equality.
+            // For consecutive check:
+            const oneDayMs = 86400000;
+            // Get today in IST (timestamp relative)
+            const todayTime = todayIST.getTime();
+            // Get last review in IST (timestamp relative)
+            // But lastReviewDate from DB might be in middle of day.
+            // Re-construct 00:00 IST for last review:
+            // This is complex. Simpler: 
+            // If (YesterdayStr == LastReviewStr) -> Consecutive.
+            
+            const yesterday = new Date(todayIST);
+            yesterday.setDate(yesterday.getDate() - 1);
+            const yesterdayStr = getISTDateStr(yesterday);
+            
+            if (lastReviewStr === yesterdayStr) {
+                isConsecutive = true;
+            }
+        }
+        
+        if (isConsecutive) {
+          user.currentStreak += 1;
+        } else {
+          user.currentStreak = 1;
+        }
+        user.lastReviewDate = new Date(); // Save absolute timestamp of review
+      }
+
+      // Update History map with IST date string
+      const count = user.reviewHistory ? user.reviewHistory.get(todayStr) || 0 : 0;
+      
+      if (!user.reviewHistory) {
+         user.reviewHistory = new Map();
+      }
+      user.reviewHistory.set(todayStr, count + 1);
+
+      await user.save();
+    }
+
     res.json({ success: true, card });
   } catch (err) {
     res.status(500).json({ success: false, error: err instanceof Error ? err.message : "An error occurred" });

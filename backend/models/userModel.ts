@@ -37,6 +37,19 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    currentStreak: {
+      type: Number,
+      default: 0,
+    },
+    lastReviewDate: {
+      type: Date,
+      default: null,
+    },
+    reviewHistory: {
+      type: Map,
+      of: Number,
+      default: {},
+    },
   },
 
   {

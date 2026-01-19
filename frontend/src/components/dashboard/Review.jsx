@@ -4,6 +4,7 @@ import axios from "axios";
 import toast from "react-hot-toast";
 
 const Review = () => {
+  const { getUserData } = useContext(AppContent);
   const [dueCards, setDueCards] = useState([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
@@ -41,6 +42,7 @@ const Review = () => {
         quality,
       });
       if (data.success) {
+        await getUserData(); // Refresh user data to update streak
         setShowAnswer(false);
         setCurrentIdx((idx) => idx + 1);
       } else {
