@@ -28,56 +28,6 @@ const TopNav = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-
-  const exportData = async () => {
-    try {
-      const { data } = await axios.get("/api/data/export");
-      if (data.success) {
-        const jsonString = JSON.stringify(data.data, null, 2);
-        const blob = new Blob([jsonString], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `recallforge_backup_${new Date().toISOString().split("T")[0]}.json`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        toast.success("Data exported successfully");
-      } else {
-        toast.error(data.message);
-      }
-    } catch (error) {
-      console.error("Export error:", error);
-      toast.error("Failed to export data");
-    }
-  };
-
-  const importData = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const jsonData = JSON.parse(e.target.result);
-        const { data } = await axios.post("/api/data/import", {
-          data: jsonData,
-        });
-        if (data.success) {
-          toast.success(data.message);
-        } else {
-          toast.error(data.message);
-        }
-      } catch (error) {
-        console.error("Import error:", error);
-        toast.error("Invalid JSON file or import failed");
-      }
-    };
-    reader.readAsText(file);
-    event.target.value = "";
-    setIsDropdownOpen(false);
-  };
-
   return (
     <header className="sticky top-0 z-50 border-b border-white/5 bg-neutral-950/80 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
@@ -148,28 +98,6 @@ const TopNav = () => {
                   <KeyRound size={16} />
                   Change Password
                 </Link>
-
-                <button
-                  onClick={() => {
-                     exportData();
-                     setIsDropdownOpen(false);
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-300 hover:bg-white/5 hover:text-white text-left"
-                >
-                  <FileJson size={16} />
-                  Export Data
-                </button>
-
-                <label className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-300 hover:bg-white/5 hover:text-white">
-                  <FileJson size={16} />
-                  Import Data
-                  <input
-                    type="file"
-                    accept=".json"
-                    onChange={importData}
-                    className="hidden"
-                  />
-                </label>
 
                 <div className="my-1 border-t border-white/5"></div>
                 
