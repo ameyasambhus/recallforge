@@ -3,6 +3,7 @@ import { AppContent } from "../../context/AppContext";
 import { useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
+import MDEditor from "@uiw/react-md-editor";
 
 const LOG_STORAGE_KEY = "recallforge_log_draft";
 
@@ -178,14 +179,16 @@ const Log = () => {
             )}
           </button>
           
-          <textarea
-            id="aInput"
-            placeholder="Answer (revealed after recall)"
-            className="w-full rounded-xl border border-gray-600 bg-[#1f262d] p-3 text-white placeholder-gray-400 focus:border-indigo-500 focus:ring focus:ring-indigo-500/40"
-            onChange={(e) => setAnswer(e.target.value)}
-            value={answer}
-            rows={3}
-          />
+          <div data-color-mode="dark" className="rounded-xl overflow-hidden border border-white/5 shadow-inner">
+            <MDEditor
+              value={answer}
+              onChange={(val) => setAnswer(val || "")}
+              preview="edit"
+              textareaProps={{
+                placeholder: "Answer (Markdown supported, revealed after recall)"
+              }}
+            />
+          </div>
         </div>
 
         <input

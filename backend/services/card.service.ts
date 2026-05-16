@@ -145,7 +145,7 @@ export const generateService = {
   async generateAnswerService(question: string) {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const response = await ai.models.generateContentStream({
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-2.5-flash-lite',
       contents: question,
       config: {
         systemInstruction:

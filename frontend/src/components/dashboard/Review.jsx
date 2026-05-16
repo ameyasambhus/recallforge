@@ -2,6 +2,7 @@ import React, { useEffect, useState, useContext } from "react";
 import { AppContent } from "../../context/AppContext";
 import axios from "axios";
 import toast from "react-hot-toast";
+import MDEditor from "@uiw/react-md-editor";
 
 const Review = () => {
   const { getUserData } = useContext(AppContent);
@@ -85,7 +86,13 @@ const Review = () => {
       {showAnswer ? (
         <div className="mb-4">
           <div className="font-bold text-lg mb-2">Answer:</div>
-          <div className="text-neutral-400">{card.answer}</div>
+          <div data-color-mode="dark" className="rounded-xl overflow-hidden border border-white/5 shadow-inner">
+            <MDEditor
+              value={card.answer}
+              preview="preview"
+              hideToolbar={true}
+            />
+          </div>
         </div>
       ) : (
         <button

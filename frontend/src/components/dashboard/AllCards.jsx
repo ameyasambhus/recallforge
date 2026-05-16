@@ -2,30 +2,37 @@ import React, { useEffect, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { ChevronLeft, ChevronRight, Trash2, Calendar, Folder, Search, ArrowUpDown, X, Edit2 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import MDEditor from "@uiw/react-md-editor";
 
-const ExpandableText = ({ text, limit = 150 }) => {
+const ExpandableText = ({ text, limit = 150, isMarkdown = false }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   if (!text) return null;
 
-  if (text.length <= limit) {
-    return <div>{text}</div>;
-  }
+  const content = isExpanded || text.length <= limit ? text : `${text.slice(0, limit)}...`;
 
   return (
     <div>
-      <div>
-        {isExpanded ? text : `${text.slice(0, limit)}...`}
+      <div className={isMarkdown ? "w-full max-w-none" : ""} data-color-mode="dark">
+        {isMarkdown ? (
+          <MDEditor.Markdown source={content} style={{ backgroundColor: 'transparent', fontSize: '0.875rem' }} />
+        ) : (
+          content
+        )}
       </div>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          setIsExpanded(!isExpanded);
-        }}
-        className="mt-2 text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors uppercase tracking-wide opacity-80 hover:opacity-100"
-      >
-        {isExpanded ? "Show Less" : "Read More"}
-      </button>
+      {text.length > limit && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsExpanded(!isExpanded);
+          }}
+          className="mt-2 text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors uppercase tracking-wide opacity-80 hover:opacity-100"
+        >
+          {isExpanded ? "Show Less" : "Read More"}
+        </button>
+      )}
     </div>
   );
 };
@@ -443,8 +450,12 @@ const AllCards = () => {
 
                 <div className="space-y-2">
                   <h3 className="text-sm uppercase text-gray-500 font-semibold tracking-wider">Answer</h3>
-                  <div className="p-4 rounded-xl bg-[#272e36] border border-white/5 text-gray-300 leading-relaxed whitespace-pre-wrap">
-                    <ExpandableText text={selectedCard.answer} limit={400} />
+                  <div data-color-mode="dark" className="rounded-xl overflow-hidden border border-white/5 shadow-inner">
+                    <MDEditor
+                      value={selectedCard.answer}
+                      preview="preview"
+                      hideToolbar={true}
+                    />
                   </div>
                 </div>
 
@@ -496,14 +507,15 @@ const AllCards = () => {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm text-gray-400">Answer</label>
-                  <textarea
-                    value={editForm.answer}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, answer: e.target.value }))}
-                    className="w-full rounded-xl border border-white/10 bg-[#272e36] p-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:ring focus:ring-indigo-500/20 outline-none transition-all"
-                    rows={5}
-                  />
+                <div className="space-y-2" data-color-mode="dark">
+                  <label className="text-sm text-gray-400">Answer (Markdown supported)</label>
+                  <div className="rounded-xl overflow-hidden border border-white/5 shadow-inner">
+                    <MDEditor
+                      value={editForm.answer}
+                      onChange={(val) => setEditForm(prev => ({ ...prev, answer: val || '' }))}
+                      preview="edit"
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-2">
