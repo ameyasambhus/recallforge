@@ -11,7 +11,23 @@ const Log = () => {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [folder, setFolder] = useState("");
+  const [folders, setFolders] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
+
+  // Fetch available folders for autocomplete
+  useEffect(() => {
+    const fetchFolders = async () => {
+      try {
+        const { data } = await axios.get("/api/card/folders");
+        if (data.success) {
+          setFolders(data.folders);
+        }
+      } catch (error) {
+        console.error("Failed to fetch folders:", error);
+      }
+    };
+    fetchFolders();
+  }, []);
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -181,6 +197,11 @@ const Log = () => {
           onChange={(e) => setFolder(e.target.value)}
           value={folder}
         />
+        <datalist id="folderList">
+          {folders.map((f, i) => (
+            <option key={i} value={f.name} />
+          ))}
+        </datalist>
 
         <button
           onClick={submitCard}

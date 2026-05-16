@@ -38,6 +38,21 @@ const folderModel = {
     return result.rows[0];
   },
 
+  async update(where: { id: number | string; user_id: number | string }, name: string): Promise<Folder | null> {
+    const result = await pool.query<Folder>(
+      'UPDATE folders SET name = $1, updated_at = $2 WHERE id = $3 AND user_id = $4 RETURNING *',
+      [name, new Date(), where.id, where.user_id]
+    );
+    return result.rows[0] ?? null;
+  },
+
+  async deleteById(where: { id: number | string; user_id: number | string }): Promise<void> {
+    // Delete the folder. Note: Check ON DELETE constraints. Usually it's SET NULL for cards.
+    // To be safe, we can manually set folder_id to NULL for cards referencing this folder.
+    await pool.query('UPDATE cards SET folder_id = NULL WHERE folder_id = $1 AND user_id = $2', [where.id, where.user_id]);
+    await pool.query('DELETE FROM folders WHERE id = $1 AND user_id = $2', [where.id, where.user_id]);
+  },
+
   async deleteByUser(userId: number | string): Promise<void> {
     await pool.query('DELETE FROM folders WHERE user_id = $1', [userId]);
   },

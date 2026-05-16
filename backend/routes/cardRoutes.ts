@@ -6,11 +6,17 @@ import {
   generateAnswer,
   getAllCards,
   getDueCards,
+  getFolders,
+  updateFolder,
+  deleteFolder,
   reviewCard,
   updateCard,
 } from "../controllers/card.controller.js";
 const cardRouter = express.Router();
 cardRouter.post("/log", userAuth, createCard);
+cardRouter.get("/folders", userAuth, getFolders);
+cardRouter.put("/folder/:id/update", userAuth, updateFolder);
+cardRouter.delete("/folder/:id/delete", userAuth, deleteFolder);
 cardRouter.get("/due", userAuth, getDueCards);
 cardRouter.get("/cards", userAuth, getAllCards);
 cardRouter.put("/:id/review", userAuth, reviewCard);

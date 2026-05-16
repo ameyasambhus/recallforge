@@ -6,6 +6,7 @@ import {
   generateService,
   updateService,
 } from '../services/card.service.js';
+import folderModel from '../models/folderModel.js';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -77,6 +78,36 @@ export const getAllCards = async (req: Request, res: Response) => {
       totalCards: total,
       folders: ['All', ...folders.filter(Boolean), 'Uncategorized'],
     });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'An error occurred' });
+  }
+};
+
+export const getFolders = async (req: Request, res: Response) => {
+  try {
+    const folders = await folderModel.findByUser(String(req.user.id));
+    res.json({ success: true, folders: folders.map(f => ({ _id: f.id, name: f.name })) });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'An error occurred' });
+  }
+};
+
+export const updateFolder = async (req: Request, res: Response) => {
+  try {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: 'Folder name is required' });
+    const updatedFolder = await folderModel.update({ id: req.params.id, user_id: String(req.user.id) }, name);
+    if (!updatedFolder) return res.status(404).json({ error: 'Folder not found' });
+    res.json({ success: true, folder: { _id: updatedFolder.id, name: updatedFolder.name } });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'An error occurred' });
+  }
+};
+
+export const deleteFolder = async (req: Request, res: Response) => {
+  try {
+    await folderModel.deleteById({ id: req.params.id, user_id: String(req.user.id) });
+    res.json({ success: true, message: 'Folder deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'An error occurred' });
   }

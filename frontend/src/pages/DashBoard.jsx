@@ -5,6 +5,7 @@ import Setting from "../components/dashboard/Setting";
 import { AppContent } from "../context/AppContext";
 import Review from "../components/dashboard/Review";
 import AllCards from "../components/dashboard/AllCards";
+import Folders from "../components/dashboard/Folders";
 
 import { User, LogOut, Settings, FileJson, KeyRound } from "lucide-react";
 import axios from "axios";
@@ -67,6 +68,9 @@ const TopNav = () => {
             </Link>
             <Link to="/app/cards" className="btn btn-primary bg-transparent text-sm">
               Cards
+            </Link>
+            <Link to="/app/folders" className="btn btn-primary bg-transparent text-sm">
+              Folders
             </Link>
           </div>
 
@@ -141,6 +145,7 @@ export default function Dashboard() {
           <Route path="log" element={<Log />} />
           <Route path="review" element={<Review />} />
           <Route path="cards" element={<AllCards />} />
+          <Route path="folders" element={<Folders />} />
           <Route path="settings" element={<Setting />} />
         </Routes>
       </main>
