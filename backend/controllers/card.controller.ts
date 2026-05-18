@@ -9,6 +9,11 @@ import {
 import { cardMediaService } from '../services/cardMedia.service.js';
 import cardMediaModel from '../models/cardMediaModel.js';
 import folderModel from '../models/folderModel.js';
+import {
+  assertMediaUploadAllowed,
+  consumeAiUsageOrThrow,
+  getSubscriptionSnapshot,
+} from '../services/subscription.service.js';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -16,6 +21,7 @@ export const createCard = async (req: Request, res: Response) => {
   let createdCard: any = null;
   try {
     const files = (req.files as Express.Multer.File[]) || [];
+    await assertMediaUploadAllowed(String(req.user.id), files.length, 0);
 
     const card = await createService.create(
       String(req.user.id),
@@ -47,7 +53,9 @@ export const createCard = async (req: Request, res: Response) => {
         console.error('Rollback failed for card create:', deleteErr);
       }
     }
-    res.status(400).json({ error: err instanceof Error ? err.message : 'An error occurred' });
+    const errorMessage = err instanceof Error ? err.message : 'An error occurred';
+    const statusCode = errorMessage.includes('plan') ? 403 : 400;
+    res.status(statusCode).json({ error: errorMessage });
   }
 };
 
@@ -187,6 +195,8 @@ export const generateAnswer = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'Question is required' });
     }
 
+    await consumeAiUsageOrThrow(String(req.user.id));
+
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -201,13 +211,25 @@ export const generateAnswer = async (req: Request, res: Response) => {
       }
     }
 
-    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    const subscription = await getSubscriptionSnapshot(String(req.user.id));
+    res.write(`data: ${JSON.stringify({ done: true, subscription })}\n\n`);
     res.end();
   } catch (err) {
     console.error('Error generating answer:', err);
+
+    if (!res.headersSent) {
+      const errorMessage = err instanceof Error ? err.message : 'An error occurred';
+      const statusCode = errorMessage.includes('Monthly AI answer limit reached') ? 403 : 500;
+      return res.status(statusCode).json({
+        success: false,
+        error: errorMessage,
+      });
+    }
+
     res.write(
       `data: ${JSON.stringify({ error: err instanceof Error ? err.message : 'An error occurred' })}\n\n`
     );
+    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
     res.end();
   }
 };
@@ -229,6 +251,8 @@ export const uploadCardMedia = async (req: Request, res: Response) => {
         ? 404
         : errorMessage === 'Forbidden'
           ? 403
+          : errorMessage.toLowerCase().includes('plan')
+            ? 403
           : 400;
     res.status(statusCode).json({ success: false, error: errorMessage });
   }

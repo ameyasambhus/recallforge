@@ -4,6 +4,7 @@ import cardModel from '../models/cardModel.js';
 import folderModel from '../models/folderModel.js';
 import pool from '../config/postgres.js';
 import { cardService } from '../services/card.service.js';
+import { getSubscriptionSnapshot } from '../services/subscription.service.js';
 
 export const getUserData = async (req: Request, res: Response) => {
   try {
@@ -50,6 +51,8 @@ export const getUserData = async (req: Request, res: Response) => {
       reviewHistory[row.review_date] = Number(row.cards_reviewed);
     }
 
+    const subscription = await getSubscriptionSnapshot(user.id);
+
     res.json({
       success: true,
       userData: {
@@ -58,6 +61,7 @@ export const getUserData = async (req: Request, res: Response) => {
         isAccountVerified: user.is_account_verified,
         currentStreak,
         reviewHistory,
+        subscription,
       },
     });
   } catch (error) {

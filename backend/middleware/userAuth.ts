@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
 import userModel from '../models/userModel.js';
+import { refreshExpiredPlanForUser } from '../services/subscription.service.js';
 
 const userAuth = async (req: Request, res: Response, next: NextFunction) => {
   const { token } = req.cookies;
@@ -16,6 +17,9 @@ const userAuth = async (req: Request, res: Response, next: NextFunction) => {
       if (!user) {
         return res.json({ success: false, message: 'User not found' });
       }
+      const refreshed = await refreshExpiredPlanForUser(user.id);
+      user.plan = refreshed.plan;
+      user.plan_expires_at = refreshed.plan_expires_at;
       req.user = user;
     } else {
       return res.json({ success: false, message: 'Not authorized. Login again' });

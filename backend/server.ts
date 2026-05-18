@@ -7,10 +7,12 @@ import authRouter from "./routes/authRoutes.js";
 import cardRouter from "./routes/cardRoutes.js";
 import userRouter from "./routes/userRoutes.js";
 import listRouter from "./routes/listRoutes.js";
+import billingRouter from "./routes/billingRoutes.js";
 import rateLimiter from "./middleware/rateLimiter.js";
 import userAuth from "./middleware/userAuth.js";
 import { fileURLToPath } from "url";
 import path from "path";
+import { handleRazorpayWebhook } from "./controllers/billing.controller.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,6 +28,8 @@ const allowedOrigins = process.env.NODE_ENV === "production"
   ? [process.env.FRONTEND_URL || "https://recallforge.onrender.com"]
   : ["http://localhost:5173", "http://localhost:5174", "http://localhost:3000", "http://localhost:4000"];
 
+app.post("/api/billing/razorpay/webhook", express.raw({ type: "application/json" }), handleRazorpayWebhook);
+
 app.use(express.json());
 app.use(cookieParser());
 app.use(cors({ origin: allowedOrigins, credentials: true }));
@@ -33,6 +37,7 @@ app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use("/api/card", rateLimiter, cardRouter);
 app.use("/api/user", rateLimiter, userRouter);
 app.use("/api/lists", rateLimiter, listRouter);
+app.use("/api/billing", rateLimiter, billingRouter);
 
 app.use("/api/auth", authRouter);
 

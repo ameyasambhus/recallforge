@@ -5,11 +5,12 @@ import axios from "axios";
 import toast from "react-hot-toast";
 import MDEditor from "@uiw/react-md-editor";
 import { FileText, Image as ImageIcon, PlayCircle } from "lucide-react";
+import { MAX_FILE_SIZE_BYTES, PLAN_LABELS, PLAN_LIMITS } from "../../constants/subscription";
 
 const LOG_STORAGE_KEY = "recallforge_log_draft";
 
 const Log = () => {
-  const { userData } = useContext(AppContent);
+  const { userData, getUserData } = useContext(AppContent);
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [folder, setFolder] = useState("");
@@ -19,6 +20,12 @@ const Log = () => {
   const [mediaFilePreviews, setMediaFilePreviews] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const activePlan = userData?.subscription?.plan || "free";
+  const aiAnswersLimit =
+    userData?.subscription?.aiAnswersLimit ?? PLAN_LIMITS[activePlan].aiAnswers;
+  const aiUsedThisMonth = userData?.subscription?.aiUsageThisMonth || 0;
+  const mediaFilesLimit =
+    userData?.subscription?.mediaFilesLimit ?? PLAN_LIMITS[activePlan].mediaFiles;
 
   // Fetch available folders for autocomplete
   useEffect(() => {
@@ -61,6 +68,10 @@ const Log = () => {
       toast.error("Please enter a question first");
       return;
     }
+    if (aiUsedThisMonth >= aiAnswersLimit) {
+      toast.error(`AI limit reached (${aiAnswersLimit}/${aiAnswersLimit}) for ${PLAN_LABELS[activePlan]} plan`);
+      return;
+    }
 
     setIsGenerating(true);
     setAnswer(""); // Clear previous answer
@@ -76,7 +87,14 @@ const Log = () => {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to generate answer");
+        let message = "Failed to generate answer";
+        try {
+          const payload = await response.json();
+          if (payload?.error) message = payload.error;
+        } catch {
+          // Ignore JSON parse failure.
+        }
+        throw new Error(message);
       }
 
       const reader = response.body.getReader();
@@ -103,7 +121,12 @@ const Log = () => {
             
             if (data.done) {
               toast.success("Answer generated!");
+              await getUserData();
               break;
+            }
+
+            if (data.subscription) {
+              await getUserData();
             }
             
             if (data.text) {
@@ -114,7 +137,7 @@ const Log = () => {
         }
       }
     } catch (error) {
-      toast.error("Failed to generate answer");
+      toast.error(error?.message || "Failed to generate answer");
       console.error(error);
     } finally {
       setIsGenerating(false);
@@ -127,6 +150,10 @@ const Log = () => {
       axios.defaults.withCredentials = true;
       if (!question || !answer || !folder) {
         toast.error("Please fill all fields");
+        return;
+      }
+      if (mediaFiles.length > mediaFilesLimit) {
+        toast.error(`Your ${PLAN_LABELS[activePlan]} plan allows maximum ${mediaFilesLimit} attachment(s)`);
         return;
       }
       setIsSubmitting(true);
@@ -176,12 +203,18 @@ const Log = () => {
         file.type.startsWith("image/") ||
         file.type.startsWith("video/") ||
         file.type === "application/pdf";
-      return validType && file.size <= 2 * 1024 * 1024;
+      return validType && file.size <= MAX_FILE_SIZE_BYTES;
     };
 
     const invalidFile = selectedFiles.find((file) => !isValidFile(file));
     if (invalidFile) {
       toast.error("Only image/video/PDF files up to 2 MB are allowed");
+      event.target.value = "";
+      return;
+    }
+
+    if (mediaFilesLimit <= 0) {
+      toast.error("Media uploads are available on Pro and Max plans only");
       event.target.value = "";
       return;
     }
@@ -199,9 +232,9 @@ const Log = () => {
         if (!exists) merged.push(file);
       });
 
-      if (merged.length > 3) {
-        toast.error("You can upload maximum 3 files");
-        return merged.slice(0, 3);
+      if (merged.length > mediaFilesLimit) {
+        toast.error(`You can upload maximum ${mediaFilesLimit} file(s) on ${PLAN_LABELS[activePlan]} plan`);
+        return merged.slice(0, mediaFilesLimit);
       }
 
       return merged;
@@ -236,6 +269,16 @@ const Log = () => {
       });
     };
   }, [mediaFiles]);
+
+  useEffect(() => {
+    if (mediaFilesLimit === 0 && mediaFiles.length) {
+      setMediaFiles([]);
+      return;
+    }
+    if (mediaFiles.length > mediaFilesLimit) {
+      setMediaFiles((prev) => prev.slice(0, mediaFilesLimit));
+    }
+  }, [mediaFiles, mediaFilesLimit]);
   return (
     <div className="w-full max-w-2xl rounded-2xl border border-white/10 bg-[#272e36] p-8 shadow-lg">
       <h2 className="text-2xl font-semibold text-white mb-4 text-center">
@@ -255,7 +298,7 @@ const Log = () => {
         <div className="space-y-2">
           <button
             onClick={generateAnswer}
-            disabled={isGenerating || !question.trim()}
+            disabled={isGenerating || !question.trim() || aiUsedThisMonth >= aiAnswersLimit}
             className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 font-medium hover:bg-indigo-600/30 hover:border-indigo-500/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isGenerating ? (
@@ -270,6 +313,9 @@ const Log = () => {
               </>
             )}
           </button>
+          <p className="text-xs text-gray-400">
+            AI usage this month: {aiUsedThisMonth}/{aiAnswersLimit} ({PLAN_LABELS[activePlan]} plan)
+          </p>
           
           <div data-color-mode="dark" className="rounded-xl overflow-hidden border border-white/5 shadow-inner">
             <MDEditor
@@ -304,9 +350,14 @@ const Log = () => {
             multiple
             accept="image/*,video/*,application/pdf"
             onChange={handleFileSelection}
+            disabled={mediaFilesLimit === 0}
             className="block w-full text-sm text-gray-300 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-600 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-indigo-500"
           />
-          <p className="text-xs text-gray-400 mt-2">Up to 3 files. Max 2 MB each.</p>
+          <p className="text-xs text-gray-400 mt-2">
+            {mediaFilesLimit === 0
+              ? "Attachments are disabled on Free plan. Upgrade to Pro/Max."
+              : `Up to ${mediaFilesLimit} file(s) on ${PLAN_LABELS[activePlan]} plan. Max 2 MB each.`}
+          </p>
           {!!mediaFilePreviews.length && (
             <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
               {mediaFilePreviews.map(({ key, file, previewUrl }) => (

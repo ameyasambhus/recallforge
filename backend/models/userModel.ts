@@ -12,6 +12,8 @@ export interface User {
   reset_otp: string;
   reset_otp_expire_at: number;
   current_streak: number;
+  plan: 'free' | 'pro' | 'max';
+  plan_expires_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }

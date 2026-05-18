@@ -3,15 +3,55 @@ import { AppContent } from "../../context/AppContext";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
+import { PLAN_LABELS, PLAN_LIMITS } from "../../constants/subscription";
 
 import Heatmap from "./Heatmap";
 
+const PLAN_PRICING_PAISE = {
+  pro: 9900,
+  max: 19900,
+};
+
+const PLAN_FEATURES = [
+  { id: "free", title: "Free", note: "Great for trying RecallForge" },
+  { id: "pro", title: "Pro", note: "For regular focused study" },
+  { id: "max", title: "Max", note: "For heavy AI + media usage" },
+];
+
+const loadRazorpayScript = () =>
+  new Promise((resolve) => {
+    if (window.Razorpay) {
+      resolve(true);
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+
+const formatInr = (paise) =>
+  new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format((paise || 0) / 100);
+
 const Setting = () => {
-  const { userData, setUserData, setLoggedIn, logout } = useContext(AppContent);
+  const { userData, logout, getUserData } = useContext(AppContent);
   const navigate = useNavigate();
   const [showDeleteModal, setShowDeleteModal] = React.useState(false);
   const [confirmationEmail, setConfirmationEmail] = React.useState("");
+  const [billingBusyPlan, setBillingBusyPlan] = React.useState("");
+  const [pricingPaise, setPricingPaise] = React.useState(PLAN_PRICING_PAISE);
 
+  const activePlan = userData?.subscription?.plan || "free";
+  const planExpiresAt = userData?.subscription?.planExpiresAt || null;
+  const nextResetAt = userData?.subscription?.nextResetAt || null;
+  const aiUsage = userData?.subscription?.aiUsageThisMonth || 0;
+  const aiLimit = userData?.subscription?.aiAnswersLimit || PLAN_LIMITS[activePlan].aiAnswers;
 
   const deleteAccount = async () => {
     if (
@@ -37,12 +77,169 @@ const Setting = () => {
     }
   };
 
+  const refreshUntilPlanUpdated = async (targetPlan) => {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1800));
+      const { data } = await axios.get("/api/user/data");
+      if (data?.success) {
+        const nextPlan = data.userData?.subscription?.plan || "free";
+        if (nextPlan === targetPlan) {
+          await getUserData();
+          return true;
+        }
+      }
+    }
+    await getUserData();
+    return false;
+  };
+
+  const startCheckout = async (plan) => {
+    try {
+      setBillingBusyPlan(plan);
+
+      const isScriptLoaded = await loadRazorpayScript();
+      if (!isScriptLoaded) {
+        toast.error("Failed to load Razorpay checkout");
+        return;
+      }
+
+      const { data } = await axios.post("/api/billing/razorpay/order", { plan });
+      if (!data?.success || !data?.order?.id || !data?.keyId) {
+        toast.error(data?.error || "Unable to start payment");
+        return;
+      }
+
+      if (data.pricing?.pro && data.pricing?.max) {
+        setPricingPaise(data.pricing);
+      }
+
+      const razorpay = new window.Razorpay({
+        key: data.keyId,
+        amount: data.order.amount,
+        currency: data.order.currency,
+        order_id: data.order.id,
+        name: "RecallForge",
+        description: `${PLAN_LABELS[plan]} monthly plan`,
+        prefill: {
+          name: userData?.name || "",
+          email: userData?.email || "",
+        },
+        notes: {
+          plan,
+        },
+        theme: {
+          color: "#4f46e5",
+        },
+        handler: async (response) => {
+          try {
+            toast.success("Payment received. Activating your plan...");
+            const verifyRes = await axios.post("/api/billing/razorpay/verify", {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            });
+            if (verifyRes.data?.success) {
+              await getUserData();
+              toast.success(`${PLAN_LABELS[plan]} plan is active`);
+            } else {
+              toast.error(verifyRes.data?.error || "Payment verification failed");
+            }
+          } catch (error) {
+            toast.error(error?.response?.data?.error || "Payment verification failed");
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            toast("Payment cancelled");
+          },
+        },
+      });
+
+      razorpay.open();
+    } catch (error) {
+      toast.error(error?.response?.data?.error || "Unable to start payment");
+    } finally {
+      setBillingBusyPlan("");
+    }
+  };
+
   return (
     <>
       <div className="w-full rounded-2xl border border-white/10 bg-[#272e36] p-8 shadow-lg">
         <h2 className="mb-4 text-center text-2xl font-semibold text-white">
           Settings
         </h2>
+
+        <div className="mb-8 rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-4">
+          <h3 className="text-lg font-medium text-white">Subscription</h3>
+          <p className="mt-1 text-sm text-indigo-200">
+            Current plan: <span className="font-semibold text-white">{PLAN_LABELS[activePlan]}</span>
+          </p>
+          <p className="mt-1 text-xs text-indigo-200">
+            AI usage this month: {aiUsage}/{aiLimit}
+          </p>
+          <p className="mt-1 text-xs text-indigo-200">
+            Media per card: {PLAN_LIMITS[activePlan].mediaFiles} file(s)
+          </p>
+          {planExpiresAt && (
+            <p className="mt-1 text-xs text-indigo-200">
+              Plan expiry: {new Date(planExpiresAt).toLocaleDateString("en-IN")}
+            </p>
+          )}
+          {nextResetAt && (
+            <p className="mt-1 text-xs text-indigo-200">
+              AI reset: {new Date(nextResetAt).toLocaleDateString("en-IN")}
+            </p>
+          )}
+
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+            {PLAN_FEATURES.map((planInfo) => {
+              const limits = PLAN_LIMITS[planInfo.id];
+              const isCurrent = activePlan === planInfo.id;
+              const isPaid = planInfo.id !== "free";
+              const planPrice = isPaid ? pricingPaise[planInfo.id] : 0;
+
+              return (
+                <div
+                  key={planInfo.id}
+                  className={`rounded-xl border p-4 ${
+                    isCurrent
+                      ? "border-indigo-400/70 bg-indigo-600/10"
+                      : "border-white/10 bg-[#1e2329]"
+                  }`}
+                >
+                  <p className="text-white font-medium">{planInfo.title}</p>
+                  <p className="text-xs text-gray-400 mt-1">{planInfo.note}</p>
+                  <p className="text-sm text-gray-300 mt-3">AI: {limits.aiAnswers}/month</p>
+                  <p className="text-sm text-gray-300">Media: {limits.mediaFiles}/card</p>
+                  <p className="text-sm text-gray-300">
+                    Price: {isPaid ? `${formatInr(planPrice)}/month` : "Free"}
+                  </p>
+                  {isPaid ? (
+                    <button
+                      onClick={() => startCheckout(planInfo.id)}
+                      disabled={billingBusyPlan === planInfo.id}
+                      className="mt-3 w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
+                    >
+                      {billingBusyPlan === planInfo.id
+                        ? "Starting..."
+                        : isCurrent
+                          ? "Renew Plan"
+                          : `Upgrade to ${planInfo.title}`}
+                    </button>
+                  ) : (
+                    <button
+                      disabled
+                      className="mt-3 w-full rounded-lg border border-white/10 px-3 py-2 text-sm font-medium text-gray-400"
+                    >
+                      Current default plan
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
         
         {userData?.reviewHistory && (
           <div className="mb-8">

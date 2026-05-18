@@ -3,8 +3,7 @@ import cloudinary from '../config/cloudinary.js';
 import cardMediaModel, { CardMedia } from '../models/cardMediaModel.js';
 import cardModel from '../models/cardModel.js';
 import axios from 'axios';
-
-const MAX_FILES_PER_CARD = 3;
+import { assertMediaUploadAllowed } from './subscription.service.js';
 
 function resolveMediaType(mimeType: string): 'image' | 'video' | 'file' {
   if (mimeType.startsWith('image/')) return 'image';
@@ -212,9 +211,7 @@ export const cardMediaService = {
     await assertCardMediaAccess(userId, cardId, requesterEmail);
 
     const existingCount = await cardMediaModel.countByCardId(cardId);
-    if (existingCount + files.length > MAX_FILES_PER_CARD) {
-      throw new Error('A card can have maximum 3 files');
-    }
+    await assertMediaUploadAllowed(userId, files.length, existingCount);
 
     const uploads = await Promise.all(
       files.map(async (file) => {

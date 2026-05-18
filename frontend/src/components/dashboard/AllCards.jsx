@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { ChevronLeft, ChevronRight, Trash2, Calendar, Folder, Search, ArrowUpDown, X, Edit2, ListPlus, Upload, FileText, PlayCircle, Image as ImageIcon, Download } from "lucide-react";
@@ -6,6 +6,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import MDEditor from "@uiw/react-md-editor";
 import CardMediaPreview from "./CardMediaPreview";
+import { AppContent } from "../../context/AppContext";
+import { MAX_FILE_SIZE_BYTES, PLAN_LABELS, PLAN_LIMITS } from "../../constants/subscription";
 
 const ExpandableText = ({ text, limit = 150, isMarkdown = false }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -39,6 +41,7 @@ const ExpandableText = ({ text, limit = 150, isMarkdown = false }) => {
 };
 
 const AllCards = () => {
+  const { userData } = useContext(AppContent);
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
@@ -74,6 +77,9 @@ const AllCards = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState("dueDate");
   const [sortOrder, setSortOrder] = useState("asc");
+  const activePlan = userData?.subscription?.plan || "free";
+  const mediaFilesLimit =
+    userData?.subscription?.mediaFilesLimit ?? PLAN_LIMITS[activePlan].mediaFiles;
 
   const fetchCards = async () => {
     setLoading(true);
@@ -245,7 +251,7 @@ const AllCards = () => {
         file.type.startsWith("image/") ||
         file.type.startsWith("video/") ||
         file.type === "application/pdf";
-      return validType && file.size <= 2 * 1024 * 1024;
+      return validType && file.size <= MAX_FILE_SIZE_BYTES;
     };
 
     const invalidFile = selectedFiles.find((file) => !isValidFile(file));
@@ -255,9 +261,9 @@ const AllCards = () => {
       return;
     }
 
-    const maxAllowed = 3 - editMedia.length;
+    const maxAllowed = mediaFilesLimit - editMedia.length;
     if (maxAllowed <= 0) {
-      toast.error("A card can have maximum 3 files");
+      toast.error(`Your ${PLAN_LABELS[activePlan]} plan allows maximum ${mediaFilesLimit} attachment(s) per card`);
       event.target.value = "";
       return;
     }
@@ -853,7 +859,9 @@ const AllCards = () => {
 
                 <div className="space-y-3 rounded-xl border border-white/10 bg-[#272e36] p-4">
                   <div className="flex items-center justify-between">
-                    <label className="text-sm text-gray-300">Attachments ({editMedia.length}/3)</label>
+                    <label className="text-sm text-gray-300">
+                      Attachments ({editMedia.length}/{mediaFilesLimit})
+                    </label>
                   </div>
 
                   {editMediaLoading ? (
@@ -912,9 +920,14 @@ const AllCards = () => {
                       multiple
                       accept="image/*,video/*,application/pdf"
                       onChange={handleEditFileSelection}
-                      disabled={editMedia.length >= 3 || editMediaBusy}
+                      disabled={editMedia.length >= mediaFilesLimit || editMediaBusy || mediaFilesLimit === 0}
                       className="block w-full text-sm text-gray-300 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-600 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-indigo-500 disabled:opacity-50"
                     />
+                    <p className="text-xs text-gray-400">
+                      {mediaFilesLimit === 0
+                        ? "Attachments are disabled on Free plan."
+                        : `Max ${mediaFilesLimit} file(s) per card on ${PLAN_LABELS[activePlan]} plan. 2 MB per file.`}
+                    </p>
                     {!!editNewFilePreviews.length && (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {editNewFilePreviews.map(({ key, file, previewUrl }) => (
