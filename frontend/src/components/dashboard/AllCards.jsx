@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { ChevronLeft, ChevronRight, Trash2, Calendar, Folder, Search, ArrowUpDown, X, Edit2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Trash2, Calendar, Folder, Search, ArrowUpDown, X, Edit2, ListPlus } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import MDEditor from "@uiw/react-md-editor";
@@ -52,6 +52,11 @@ const AllCards = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingCard, setEditingCard] = useState(null);
   const [editForm, setEditForm] = useState({ question: "", answer: "", folder: "" });
+
+  // Add to List State
+  const [showAddToListModal, setShowAddToListModal] = useState(false);
+  const [cardToAddToList, setCardToAddToList] = useState(null);
+  const [userLists, setUserLists] = useState([]);
 
   const [selectedCard, setSelectedCard] = useState(null);
   const [limit, setLimit] = useState(10);
@@ -180,6 +185,32 @@ const AllCards = () => {
       }
     } catch (err) {
       toast.error(err.response?.data?.error || "Failed to update card");
+    }
+  };
+
+  const handleAddToListClick = async (e, card) => {
+    e.stopPropagation();
+    setCardToAddToList(card);
+    setShowAddToListModal(true);
+    
+    try {
+      const { data } = await axios.get("/api/lists");
+      if (data.success) {
+        setUserLists(data.lists.filter(l => l.my_role === 'owner' || l.my_role === 'editor'));
+      }
+    } catch (err) {
+      toast.error("Failed to fetch lists");
+    }
+  };
+
+  const handleConfirmAddToList = async (listId) => {
+    try {
+      await axios.post(`/api/lists/${listId}/cards`, { cardId: cardToAddToList._id });
+      toast.success("Card added to list!");
+      setShowAddToListModal(false);
+      setCardToAddToList(null);
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Failed to add card to list");
     }
   };
 
@@ -318,6 +349,13 @@ const AllCards = () => {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={(e) => handleAddToListClick(e, card)}
+                          className="p-2 hover:bg-green-500/10 hover:text-green-400 rounded-lg transition-all opacity-60 group-hover:opacity-100"
+                          title="Add to List"
+                        >
+                          <ListPlus className="w-4 h-4 text-green-500" />
+                        </button>
                         <button
                           onClick={(e) => handleEditClick(e, card)}
                           className="p-2 hover:bg-blue-500/10 hover:text-blue-400 rounded-lg transition-all opacity-60 group-hover:opacity-100"
@@ -590,6 +628,63 @@ const AllCards = () => {
                 <Trash2 className="w-4 h-4" />
                 Delete
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add to List Modal */}
+      {showAddToListModal && cardToAddToList && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn"
+          onClick={() => setShowAddToListModal(false)}
+        >
+          <div
+            className="bg-[#1e2329] border border-white/10 rounded-2xl shadow-2xl w-full max-w-md p-6"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-start mb-6">
+              <div className="flex items-center gap-2">
+                <ListPlus className="text-indigo-400" size={20} />
+                <h2 className="text-xl font-bold text-white">Add to List</h2>
+              </div>
+              <button
+                onClick={() => setShowAddToListModal(false)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            
+            <div className="p-3 rounded-lg bg-[#272e36] border border-white/5 mb-6">
+              <p className="text-white font-medium line-clamp-2">{cardToAddToList.question}</p>
+            </div>
+
+            <h3 className="text-sm uppercase text-gray-500 font-semibold tracking-wider mb-3">Your Lists</h3>
+            
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {userLists.length === 0 ? (
+                <div className="text-center text-gray-500 py-6">
+                  <p>No lists available.</p>
+                  <p className="text-xs mt-1">Create a list first in the Lists tab.</p>
+                </div>
+              ) : (
+                userLists.map(list => (
+                  <button
+                    key={list.id}
+                    onClick={() => handleConfirmAddToList(list.id)}
+                    className="w-full flex items-center justify-between p-3 rounded-xl bg-[#272e36]/50 hover:bg-[#272e36] border border-white/5 hover:border-indigo-500/30 transition-all text-left group"
+                  >
+                    <div>
+                      <p className="text-white font-medium text-sm">{list.title}</p>
+                      <p className="text-gray-500 text-xs mt-0.5">{list.card_count} cards</p>
+                    </div>
+                    <div className="px-3 py-1 rounded-lg bg-indigo-600/20 text-indigo-400 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                      Add
+                    </div>
+                  </button>
+                ))
+              )}
             </div>
           </div>
         </div>

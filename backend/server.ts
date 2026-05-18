@@ -6,6 +6,7 @@ import "./config/postgres.js"; // Initialise Neon PostgreSQL pool on startup
 import authRouter from "./routes/authRoutes.js";
 import cardRouter from "./routes/cardRoutes.js";
 import userRouter from "./routes/userRoutes.js";
+import listRouter from "./routes/listRoutes.js";
 import rateLimiter from "./middleware/rateLimiter.js";
 import userAuth from "./middleware/userAuth.js";
 import { fileURLToPath } from "url";
@@ -31,6 +32,7 @@ app.use(cors({ origin: allowedOrigins, credentials: true }));
 
 app.use("/api/card", rateLimiter, cardRouter);
 app.use("/api/user", rateLimiter, userRouter);
+app.use("/api/lists", rateLimiter, listRouter);
 
 app.use("/api/auth", authRouter);
 

@@ -111,18 +111,22 @@ const AuthPage = () => {
       toast.error("Please fill in all fields");
       return;
     }
-    setShowLoginCaptcha(true);
+    // DEVELOPMENT BYPASS: Skip showing captcha
+    onLoginVerify("dev_token");
+    // setShowLoginCaptcha(true);
   };
 
   const onLoginVerify = async (token) => {
     try {
-      // Verify captcha
+      // DEVELOPMENT BYPASS: Skip captcha verification
+      /*
       const verifyResponse = await axios.post("/api/auth/verify-recaptcha", { token });
       if (!verifyResponse.data.success) {
         toast.error(verifyResponse.data.message || "Captcha verification failed");
         window.grecaptcha?.reset();
         return;
       }
+      */
 
       axios.defaults.withCredentials = true;
       const { data } = await axios.post("/api/auth/login", {
@@ -152,7 +156,9 @@ const AuthPage = () => {
         toast.error("Please enter a valid OTP");
         return;
       }
-      setShowSignupCaptcha(true);
+      // DEVELOPMENT BYPASS: Skip showing captcha
+      onSignupVerify("dev_token");
+      // setShowSignupCaptcha(true);
     } else {
       // Send OTP stage - No Recaptcha
       sendOtp();
@@ -161,12 +167,15 @@ const AuthPage = () => {
 
   const onSignupVerify = async (token) => {
     try {
+      // DEVELOPMENT BYPASS: Skip captcha verification
+      /*
       const verifyResponse = await axios.post("/api/auth/verify-recaptcha", { token });
       if (!verifyResponse.data.success) {
         toast.error(verifyResponse.data.message || "Captcha verification failed");
         window.grecaptcha?.reset();
         return;
       }
+      */
 
       await verifyOtp();
     } catch (error) {

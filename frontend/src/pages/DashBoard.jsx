@@ -6,6 +6,8 @@ import { AppContent } from "../context/AppContext";
 import Review from "../components/dashboard/Review";
 import AllCards from "../components/dashboard/AllCards";
 import Folders from "../components/dashboard/Folders";
+import Lists from "../components/dashboard/Lists";
+import ListView from "../components/dashboard/ListView";
 
 import { User, LogOut, Settings, FileJson, KeyRound } from "lucide-react";
 import axios from "axios";
@@ -72,6 +74,9 @@ const TopNav = () => {
             <Link to="/app/folders" className="btn btn-primary bg-transparent text-sm">
               Folders
             </Link>
+            <Link to="/app/lists" className="btn btn-primary bg-transparent text-sm">
+              Lists
+            </Link>
           </div>
 
           <Link to="/app/settings" className="btn btn-primary bg-transparent text-sm">
@@ -126,16 +131,22 @@ const TopNav = () => {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { loggedIn, userData } = useContext(AppContent);
-  const redirect = async () => {
-    if (!loggedIn) {
+  const { loggedIn, userData, isAuthLoading } = useContext(AppContent);
+  
+  useEffect(() => {
+    if (!isAuthLoading && !loggedIn) {
       navigate("/auth");
     }
-    // Removed email verification check - all users must verify during registration
-  };
-  useEffect(() => {
-    redirect();
-  }, [loggedIn, userData]);
+  }, [loggedIn, isAuthLoading, navigate]);
+
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-neutral-950 flex justify-center items-center">
+        <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
       <TopNav />
@@ -146,6 +157,8 @@ export default function Dashboard() {
           <Route path="review" element={<Review />} />
           <Route path="cards" element={<AllCards />} />
           <Route path="folders" element={<Folders />} />
+          <Route path="lists" element={<Lists />} />
+          <Route path="lists/:id" element={<ListView />} />
           <Route path="settings" element={<Setting />} />
         </Routes>
       </main>
