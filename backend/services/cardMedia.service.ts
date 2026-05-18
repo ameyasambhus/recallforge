@@ -325,6 +325,45 @@ export const cardMediaService = {
     return { success: true };
   },
 
+  async deleteAllForCard(userId: string, cardId: string, requesterEmail?: string) {
+    if (!/^\d+$/.test(cardId)) {
+      throw new Error('Invalid card ID');
+    }
+
+    await assertCardMediaAccess(userId, cardId, requesterEmail);
+
+    const media = await cardMediaModel.findByCardId(cardId);
+    for (const item of media) {
+      const parsedUrl = parseCloudinaryUrl(item.url);
+      const publicId = parsedUrl?.publicId || null;
+      if (publicId) {
+        const resourceType = parsedUrl?.resourceType || extractResourceTypeFromUrl(item.url);
+        const deliveryType = parsedUrl?.deliveryType || extractDeliveryTypeFromUrl(item.url) || 'authenticated';
+        try {
+          if (resourceType) {
+            await deleteFromCloudinaryByPublicId(publicId, resourceType, deliveryType);
+          } else {
+            throw new Error('Unknown resource type');
+          }
+        } catch {
+          await Promise.allSettled([
+            cloudinary.uploader.destroy(publicId, {
+              resource_type: 'raw',
+              type: 'upload',
+              invalidate: true,
+            }),
+            cloudinary.uploader.destroy(publicId, {
+              resource_type: 'image',
+              type: 'authenticated',
+              invalidate: true,
+            }),
+          ]);
+        }
+      }
+      await cardMediaModel.deleteById(item.id);
+    }
+  },
+
   async viewMedia(
     userId: string,
     cardId: string,

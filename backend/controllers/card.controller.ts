@@ -174,11 +174,57 @@ export const deleteCard = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid card ID' });
     }
 
+    // Clean up media first
+    try {
+      await cardMediaService.deleteAllForCard(String(req.user.id), cardId, req.user?.email);
+    } catch (mediaErr) {
+      console.error(`Media cleanup failed for card ${cardId}:`, mediaErr);
+    }
+
     const result = await deleteService.delete(String(req.user.id), cardId);
     if (!result) {
       return res.status(404).json({ error: 'Card not found' });
     }
     res.json({ success: true, message: 'Card deleted successfully' });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err instanceof Error ? err.message : 'An error occurred',
+    });
+  }
+};
+
+export const bulkDeleteCards = async (req: Request, res: Response) => {
+  try {
+    const { cardIds } = req.body;
+    if (!Array.isArray(cardIds) || cardIds.length === 0) {
+      return res.status(400).json({ error: 'cardIds must be a non-empty array' });
+    }
+
+    const invalidIds = cardIds.filter((id) => !/^\d+$/.test(String(id)));
+    if (invalidIds.length > 0) {
+      return res.status(400).json({ error: 'All card IDs must be numeric' });
+    }
+
+    const userId = String(req.user.id);
+    const requesterEmail = req.user?.email;
+    let deletedCount = 0;
+
+    for (const cardId of cardIds) {
+      const cardIdStr = String(cardId);
+      try {
+        await cardMediaService.deleteAllForCard(userId, cardIdStr, requesterEmail);
+      } catch (mediaErr) {
+        console.error(`Media cleanup failed for card ${cardIdStr} during bulk delete:`, mediaErr);
+      }
+
+      const result = await deleteService.delete(userId, cardIdStr);
+      if (result) {
+        deletedCount++;
+      }
+    }
+
+    res.json({ success: true, message: `${deletedCount} cards deleted successfully` });
   } catch (err) {
     res.status(500).json({
       success: false,

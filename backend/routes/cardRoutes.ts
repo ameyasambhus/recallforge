@@ -16,6 +16,7 @@ import {
   deleteCardMedia,
   viewCardMedia,
   downloadCardMedia,
+  bulkDeleteCards,
 } from "../controllers/card.controller.js";
 import mediaRateLimiter from "../middleware/mediaRateLimiter.js";
 import mediaUploadParser from "../middleware/mediaUploadParser.js";
@@ -33,6 +34,7 @@ cardRouter.get("/due", userAuth, getDueCards);
 cardRouter.get("/cards", userAuth, getAllCards);
 cardRouter.put("/:id/review", userAuth, reviewCard);
 cardRouter.put("/:id/update", userAuth, updateCard);
+cardRouter.post("/bulk-delete", userAuth, bulkDeleteCards);
 cardRouter.delete("/:id/delete", userAuth, deleteCard);
 cardRouter.post("/generate", userAuth, generateAnswer);
 

@@ -3,7 +3,6 @@ import axios from "axios";
 import toast from "react-hot-toast";
 import { ChevronLeft, ChevronRight, Trash2, Calendar, Folder, Search, ArrowUpDown, X, Edit2, ListPlus, Upload, FileText, PlayCircle, Image as ImageIcon, Download } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import MDEditor from "@uiw/react-md-editor";
 import CardMediaPreview from "./CardMediaPreview";
 import { AppContent } from "../../context/AppContext";
@@ -52,6 +51,11 @@ const AllCards = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [cardToDelete, setCardToDelete] = useState(null);
 
+  // Bulk Selection State
+  const [selectedCardIds, setSelectedCardIds] = useState([]);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
   // Edit State
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingCard, setEditingCard] = useState(null);
@@ -75,8 +79,14 @@ const AllCards = () => {
   const [limit, setLimit] = useState(10);
   const [searchInput, setSearchInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
-  const [sortBy, setSortBy] = useState("dueDate");
-  const [sortOrder, setSortOrder] = useState("asc");
+  const [sortBy, setSortBy] = useState(() => localStorage.getItem("cards_sortBy") || "dueDate");
+  const [sortOrder, setSortOrder] = useState(() => localStorage.getItem("cards_sortOrder") || "asc");
+
+  useEffect(() => {
+    localStorage.setItem("cards_sortBy", sortBy);
+    localStorage.setItem("cards_sortOrder", sortOrder);
+  }, [sortBy, sortOrder]);
+
   const activePlan = userData?.subscription?.plan || "free";
   const mediaFilesLimit =
     userData?.subscription?.mediaFilesLimit ?? PLAN_LIMITS[activePlan].mediaFiles;
@@ -116,7 +126,9 @@ const AllCards = () => {
   };
 
   useEffect(() => {
+    setSelectedCardIds([]);
     fetchCards();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, selectedFolder, limit, searchTerm, sortBy, sortOrder]);
 
   useEffect(() => {
@@ -131,7 +143,7 @@ const AllCards = () => {
       try {
         const { data } = await axios.get(`/api/card/${selectedCard._id}/media`);
         setSelectedCardMedia(data.media || []);
-      } catch (err) {
+      } catch {
         setSelectedCardMedia([]);
       } finally {
         setMediaLoading(false);
@@ -176,15 +188,7 @@ const AllCards = () => {
     }
   };
 
-  const handleSortChange = (field) => {
-    if (sortBy === field) {
-      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
-    } else {
-      setSortBy(field);
-      setSortOrder("asc");
-    }
-    setPage(1);
-  };
+
 
   const handleDeleteClick = (e, card) => {
     e.stopPropagation();
@@ -210,6 +214,49 @@ const AllCards = () => {
     setCardToDelete(null);
   };
 
+  const isAllSelected = cards.length > 0 && cards.every(card => selectedCardIds.includes(card._id));
+
+  const handleSelectAllToggle = () => {
+    if (isAllSelected) {
+      const pageCardIds = cards.map(c => c._id);
+      setSelectedCardIds(prev => prev.filter(id => !pageCardIds.includes(id)));
+    } else {
+      const pageCardIds = cards.map(c => c._id);
+      setSelectedCardIds(prev => {
+        const next = [...prev];
+        pageCardIds.forEach(id => {
+          if (!next.includes(id)) next.push(id);
+        });
+        return next;
+      });
+    }
+  };
+
+  const handleSelectCardToggle = (e, cardId) => {
+    e.stopPropagation();
+    setSelectedCardIds(prev =>
+      prev.includes(cardId) ? prev.filter(id => id !== cardId) : [...prev, cardId]
+    );
+  };
+
+  const handleConfirmBulkDelete = async () => {
+    setBulkDeleting(true);
+    try {
+      await axios.post("/api/card/bulk-delete", { cardIds: selectedCardIds });
+      toast.success(`${selectedCardIds.length} cards deleted successfully!`);
+      setSelectedCardIds([]);
+      fetchCards();
+      setShowBulkDeleteModal(false);
+      if (selectedCard && selectedCardIds.includes(selectedCard._id)) {
+        setSelectedCard(null);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message);
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   const handleEditClick = (e, card) => {
     e.stopPropagation();
     setEditingCard(card);
@@ -232,7 +279,7 @@ const AllCards = () => {
       try {
         const { data } = await axios.get(`/api/card/${editingCard._id}/media`);
         setEditMedia(data.media || []);
-      } catch (err) {
+      } catch {
         setEditMedia([]);
       } finally {
         setEditMediaLoading(false);
@@ -357,7 +404,7 @@ const AllCards = () => {
       anchor.click();
       anchor.remove();
       window.URL.revokeObjectURL(blobUrl);
-    } catch (err) {
+    } catch {
       toast.error("Failed to download attachment");
     }
   };
@@ -395,7 +442,7 @@ const AllCards = () => {
       if (data.success) {
         setUserLists(data.lists.filter(l => l.my_role === 'owner' || l.my_role === 'editor'));
       }
-    } catch (err) {
+    } catch {
       toast.error("Failed to fetch lists");
     }
   };
@@ -517,6 +564,14 @@ const AllCards = () => {
             <table className="w-full text-left text-sm text-gray-300">
               <thead className="bg-[#272e36] text-xs uppercase font-semibold text-gray-400 tracking-wider">
                 <tr>
+                  <th className="px-4 py-4 w-12 text-center">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      onChange={handleSelectAllToggle}
+                      className="w-4 h-4 rounded border-white/10 text-indigo-600 focus:ring-indigo-500/20 bg-gray-900 cursor-pointer"
+                    />
+                  </th>
                   <th className="px-6 py-4">Question</th>
                   <th className="px-6 py-4 whitespace-nowrap">Folder</th>
                   <th className="px-6 py-4 whitespace-nowrap">Due Date</th>
@@ -524,56 +579,69 @@ const AllCards = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {cards.map((card) => (
-                  <tr
-                    key={card._id}
-                    className="hover:bg-white/5 transition-colors group cursor-pointer"
-                    onClick={() => setSelectedCard(card)}
-                  >
-                    <td className="px-6 py-4 font-medium text-white max-w-[300px] md:max-w-[400px] truncate" title={card.question}>
-                      {card.question}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-indigo-600/10 text-indigo-400 border border-indigo-600/20 whitespace-nowrap">
-                        {card.folder || "Uncategorized"}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-gray-400 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-3 h-3 opacity-60" />
-                        {new Date(card.dueDate).toLocaleDateString()}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={(e) => handleAddToListClick(e, card)}
-                          className="p-2 hover:bg-green-500/10 hover:text-green-400 rounded-lg transition-all opacity-60 group-hover:opacity-100"
-                          title="Add to List"
-                        >
-                          <ListPlus className="w-4 h-4 text-green-500" />
-                        </button>
-                        <button
-                          onClick={(e) => handleEditClick(e, card)}
-                          className="p-2 hover:bg-blue-500/10 hover:text-blue-400 rounded-lg transition-all opacity-60 group-hover:opacity-100"
-                          title="Edit"
-                        >
-                          <Edit2 className="w-4 h-4 text-blue-500" />
-                        </button>
-                        <button
-                          onClick={(e) => handleDeleteClick(e, card)}
-                          className="p-2 hover:bg-red-500/10 hover:text-red-400 rounded-lg transition-all opacity-60 group-hover:opacity-100"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4 text-red-500" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {cards.map((card) => {
+                  const isSelected = selectedCardIds.includes(card._id);
+                  return (
+                    <tr
+                      key={card._id}
+                      className={`hover:bg-white/5 transition-colors group cursor-pointer ${
+                        isSelected ? "bg-indigo-600/5 hover:bg-indigo-600/10" : ""
+                      }`}
+                      onClick={() => setSelectedCard(card)}
+                    >
+                      <td className="px-4 py-4 w-12 text-center" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => handleSelectCardToggle(e, card._id)}
+                          className="w-4 h-4 rounded border-white/10 text-indigo-600 focus:ring-indigo-500/20 bg-gray-900 cursor-pointer"
+                        />
+                      </td>
+                      <td className="px-6 py-4 font-medium text-white max-w-[300px] md:max-w-[400px] truncate" title={card.question}>
+                        {card.question}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-indigo-600/10 text-indigo-400 border border-indigo-600/20 whitespace-nowrap">
+                          {card.folder || "Uncategorized"}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-gray-400 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="w-3 h-3 opacity-60" />
+                          {new Date(card.dueDate).toLocaleDateString()}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={(e) => handleAddToListClick(e, card)}
+                            className="p-2 hover:bg-green-500/10 hover:text-green-400 rounded-lg transition-all opacity-60 group-hover:opacity-100"
+                            title="Add to List"
+                          >
+                            <ListPlus className="w-4 h-4 text-green-500" />
+                          </button>
+                          <button
+                            onClick={(e) => handleEditClick(e, card)}
+                            className="p-2 hover:bg-blue-500/10 hover:text-blue-400 rounded-lg transition-all opacity-60 group-hover:opacity-100"
+                            title="Edit"
+                          >
+                            <Edit2 className="w-4 h-4 text-blue-500" />
+                          </button>
+                          <button
+                            onClick={(e) => handleDeleteClick(e, card)}
+                            className="p-2 hover:bg-red-500/10 hover:text-red-400 rounded-lg transition-all opacity-60 group-hover:opacity-100"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4 text-red-500" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
                 {cards.length === 0 && (
                   <tr>
-                    <td colSpan="4" className="px-6 py-16 text-center text-gray-500">
+                    <td colSpan="5" className="px-6 py-16 text-center text-gray-500">
                       <div className="flex flex-col items-center gap-2">
                         <Folder className="w-8 h-8 opacity-20" />
                         <p>No cards found.</p>
@@ -1093,6 +1161,86 @@ const AllCards = () => {
                   </button>
                 ))
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Bulk Action Bar */}
+      {selectedCardIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-40 bg-[#1e2329]/95 border border-indigo-500/30 rounded-2xl shadow-2xl px-6 py-4 flex items-center justify-between gap-6 backdrop-blur-md animate-slideUp min-w-[320px] md:min-w-[500px]">
+          <div className="flex items-center gap-3">
+            <span className="flex h-2.5 w-2.5 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-indigo-500"></span>
+            </span>
+            <span className="text-sm font-medium text-gray-200">
+              <span className="text-indigo-400 font-bold text-base mr-1">{selectedCardIds.length}</span>
+              {selectedCardIds.length === 1 ? "card" : "cards"} selected
+            </span>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setSelectedCardIds([])}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-all"
+            >
+              Clear Selection
+            </button>
+            <button
+              onClick={() => setShowBulkDeleteModal(true)}
+              className="px-4 py-2 rounded-xl bg-red-600/90 hover:bg-red-600 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-lg shadow-red-500/20 active:scale-95"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Delete Selected
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete Confirmation Modal */}
+      {showBulkDeleteModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn"
+          onClick={() => !bulkDeleting && setShowBulkDeleteModal(false)}
+        >
+          <div
+            className="bg-[#1e2329] border border-white/10 rounded-2xl shadow-2xl w-full max-w-md p-6"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <Trash2 className="w-6 h-6 text-red-500" />
+              <h3 className="text-xl font-bold text-white">Bulk Delete Cards</h3>
+            </div>
+            <p className="text-gray-300 mb-4">
+              Are you sure you want to delete <span className="text-red-400 font-bold">{selectedCardIds.length}</span> selected flashcards?
+            </p>
+            <p className="text-red-400 text-sm mb-6">This action will also permanently delete all associated media files. This cannot be undone.</p>
+            <div className="flex gap-3 justify-end">
+              <button
+                disabled={bulkDeleting}
+                className="px-4 py-2 rounded-lg bg-[#272e36] text-gray-300 hover:bg-[#2a3441] transition-colors border border-white/5 disabled:opacity-50"
+                onClick={() => setShowBulkDeleteModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                disabled={bulkDeleting}
+                className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-colors flex items-center gap-2 font-medium disabled:opacity-50"
+                onClick={handleConfirmBulkDelete}
+              >
+                {bulkDeleting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    Delete {selectedCardIds.length} Cards
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>
