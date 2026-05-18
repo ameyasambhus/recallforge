@@ -4,6 +4,7 @@ import { useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import MDEditor from "@uiw/react-md-editor";
+import { FileText, Image as ImageIcon, PlayCircle } from "lucide-react";
 
 const LOG_STORAGE_KEY = "recallforge_log_draft";
 
@@ -14,6 +15,10 @@ const Log = () => {
   const [folder, setFolder] = useState("");
   const [folders, setFolders] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [mediaFiles, setMediaFiles] = useState([]);
+  const [mediaFilePreviews, setMediaFilePreviews] = useState([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   // Fetch available folders for autocomplete
   useEffect(() => {
@@ -117,22 +122,37 @@ const Log = () => {
   };
 
   const submitCard = async () => {
+    if (isSubmitting) return;
     try {
       axios.defaults.withCredentials = true;
       if (!question || !answer || !folder) {
         toast.error("Please fill all fields");
         return;
       }
-      const { data } = await axios.post("/api/card/log", {
-        question,
-        answer,
-        folder,
+      setIsSubmitting(true);
+      setUploadProgress(0);
+      const formData = new FormData();
+      formData.append("question", question);
+      formData.append("answer", answer);
+      formData.append("folder", folder);
+      mediaFiles.forEach((file) => formData.append("media", file));
+
+      const { data } = await axios.post("/api/card/log", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (progressEvent) => {
+          const total = progressEvent.total || 0;
+          if (!total) return;
+          const percent = Math.round((progressEvent.loaded * 100) / total);
+          setUploadProgress(Math.max(1, Math.min(percent, 100)));
+        },
       });
       if (data.success) {
         toast.success("Card added successfully");
         setQuestion("");
         setAnswer("");
         setFolder("");
+        setMediaFiles([]);
+        setUploadProgress(0);
         // Clear localStorage after successful submission
         localStorage.removeItem(LOG_STORAGE_KEY);
       } else {
@@ -140,10 +160,82 @@ const Log = () => {
         console.log(data.message);
       }
     } catch (error) {
-      toast.error("An error occurred");
+      toast.error(error.response?.data?.error || "Upload failed");
       console.log(error.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
+
+  const handleFileSelection = (event) => {
+    const selectedFiles = Array.from(event.target.files || []);
+    if (!selectedFiles.length) return;
+
+    const isValidFile = (file) => {
+      const validType =
+        file.type.startsWith("image/") ||
+        file.type.startsWith("video/") ||
+        file.type === "application/pdf";
+      return validType && file.size <= 2 * 1024 * 1024;
+    };
+
+    const invalidFile = selectedFiles.find((file) => !isValidFile(file));
+    if (invalidFile) {
+      toast.error("Only image/video/PDF files up to 2 MB are allowed");
+      event.target.value = "";
+      return;
+    }
+
+    setMediaFiles((prev) => {
+      const merged = [...prev];
+
+      selectedFiles.forEach((file) => {
+        const exists = merged.some(
+          (f) =>
+            f.name === file.name &&
+            f.size === file.size &&
+            f.lastModified === file.lastModified
+        );
+        if (!exists) merged.push(file);
+      });
+
+      if (merged.length > 3) {
+        toast.error("You can upload maximum 3 files");
+        return merged.slice(0, 3);
+      }
+
+      return merged;
+    });
+    event.target.value = "";
+  };
+
+  const handleRemoveSelectedFile = (fileToRemove) => {
+    setMediaFiles((prev) =>
+      prev.filter(
+        (file) =>
+          !(
+            file.name === fileToRemove.name &&
+            file.size === fileToRemove.size &&
+            file.lastModified === fileToRemove.lastModified
+          )
+      )
+    );
+  };
+
+  useEffect(() => {
+    const previews = mediaFiles.map((file) => ({
+      key: `${file.name}-${file.lastModified}-${file.size}`,
+      file,
+      previewUrl: file.type === "application/pdf" ? null : URL.createObjectURL(file),
+    }));
+    setMediaFilePreviews(previews);
+
+    return () => {
+      previews.forEach((item) => {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      });
+    };
+  }, [mediaFiles]);
   return (
     <div className="w-full max-w-2xl rounded-2xl border border-white/10 bg-[#272e36] p-8 shadow-lg">
       <h2 className="text-2xl font-semibold text-white mb-4 text-center">
@@ -206,12 +298,76 @@ const Log = () => {
           ))}
         </datalist>
 
+        <div className="rounded-xl border border-gray-600 bg-[#1f262d] p-3">
+          <input
+            type="file"
+            multiple
+            accept="image/*,video/*,application/pdf"
+            onChange={handleFileSelection}
+            className="block w-full text-sm text-gray-300 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-600 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-indigo-500"
+          />
+          <p className="text-xs text-gray-400 mt-2">Up to 3 files. Max 2 MB each.</p>
+          {!!mediaFilePreviews.length && (
+            <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {mediaFilePreviews.map(({ key, file, previewUrl }) => (
+                <div key={key} className="relative rounded-md border border-white/10 bg-[#202733] overflow-hidden">
+                  {file.type.startsWith("image/") && previewUrl && (
+                    <img src={previewUrl} alt={file.name} className="w-full h-24 object-cover" />
+                  )}
+                  {file.type.startsWith("video/") && previewUrl && (
+                    <div className="relative">
+                      <video src={previewUrl} className="w-full h-24 object-cover pointer-events-none" />
+                      <div className="absolute inset-0 bg-black/35 flex items-center justify-center">
+                        <PlayCircle className="w-7 h-7 text-white" />
+                      </div>
+                    </div>
+                  )}
+                  {file.type === "application/pdf" && (
+                    <div className="h-24 flex items-center justify-center gap-2 text-indigo-300 bg-[#202733]">
+                      <FileText className="w-5 h-5" />
+                      <span className="text-sm">PDF</span>
+                    </div>
+                  )}
+                  <div className="px-2 py-1.5 text-xs text-gray-300 truncate flex items-center gap-1.5">
+                    {file.type.startsWith("image/") ? <ImageIcon className="w-3.5 h-3.5 text-blue-300" /> : file.type.startsWith("video/") ? <PlayCircle className="w-3.5 h-3.5 text-purple-300" /> : <FileText className="w-3.5 h-3.5 text-indigo-300" />}
+                    <span className="truncate">{file.name}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveSelectedFile(file)}
+                    className="absolute top-2 right-2 p-1.5 rounded-md text-red-300 bg-black/40 hover:bg-red-500/30"
+                    title="Discard selected file"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <button
           onClick={submitCard}
-          className="w-full rounded-xl bg-indigo-600 px-4 py-3 text-white font-medium shadow-md hover:bg-indigo-500"
+          disabled={isSubmitting}
+          className="w-full rounded-xl bg-indigo-600 px-4 py-3 text-white font-medium shadow-md hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          Add Card
+          {isSubmitting ? "Uploading..." : "Add Card"}
         </button>
+
+        {isSubmitting && (
+          <div className="rounded-xl border border-indigo-500/30 bg-indigo-600/10 p-3">
+            <div className="flex justify-between text-xs text-indigo-200 mb-2">
+              <span>Uploading media and saving card...</span>
+              <span>{uploadProgress}%</span>
+            </div>
+            <div className="h-2 rounded-full bg-[#1f262d] overflow-hidden">
+              <div
+                className="h-full bg-indigo-500 transition-all duration-200"
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

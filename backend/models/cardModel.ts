@@ -73,6 +73,17 @@ const cardModel = {
     return row ? normaliseCard(row) : null;
   },
 
+  async findById(id: number | string): Promise<Card | null> {
+    const result = await pool.query<Card>(
+      `SELECT c.*, f.name AS folder
+       FROM cards c LEFT JOIN folders f ON c.folder_id = f.id
+       WHERE c.id = $1 LIMIT 1`,
+      [id]
+    );
+    const row = result.rows[0];
+    return row ? normaliseCard(row) : null;
+  },
+
   async findAndUpdate(
     where: { id: number | string; user_id: number | string },
     data: Partial<{ question: string; answer: string; folder: string; ef: number; interval: number; repetitions: number; due_date: Date }>

@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { ChevronLeft, ChevronRight, Trash2, Calendar, Folder, Search, ArrowUpDown, X, Edit2, ListPlus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Trash2, Calendar, Folder, Search, ArrowUpDown, X, Edit2, ListPlus, Upload, FileText, PlayCircle, Image as ImageIcon, Download } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import MDEditor from "@uiw/react-md-editor";
+import CardMediaPreview from "./CardMediaPreview";
 
 const ExpandableText = ({ text, limit = 150, isMarkdown = false }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -52,6 +53,12 @@ const AllCards = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingCard, setEditingCard] = useState(null);
   const [editForm, setEditForm] = useState({ question: "", answer: "", folder: "" });
+  const [editMedia, setEditMedia] = useState([]);
+  const [editNewFiles, setEditNewFiles] = useState([]);
+  const [editMediaLoading, setEditMediaLoading] = useState(false);
+  const [editMediaBusy, setEditMediaBusy] = useState(false);
+  const [editUploadProgress, setEditUploadProgress] = useState(0);
+  const [editNewFilePreviews, setEditNewFilePreviews] = useState([]);
 
   // Add to List State
   const [showAddToListModal, setShowAddToListModal] = useState(false);
@@ -59,6 +66,9 @@ const AllCards = () => {
   const [userLists, setUserLists] = useState([]);
 
   const [selectedCard, setSelectedCard] = useState(null);
+  const [selectedCardMedia, setSelectedCardMedia] = useState([]);
+  const [mediaLoading, setMediaLoading] = useState(false);
+  const [activeMediaIndex, setActiveMediaIndex] = useState(null);
   const [limit, setLimit] = useState(10);
   const [searchInput, setSearchInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -102,6 +112,46 @@ const AllCards = () => {
   useEffect(() => {
     fetchCards();
   }, [page, selectedFolder, limit, searchTerm, sortBy, sortOrder]);
+
+  useEffect(() => {
+    const fetchCardMedia = async () => {
+      if (!selectedCard?._id) {
+        setSelectedCardMedia([]);
+        setActiveMediaIndex(null);
+        return;
+      }
+
+      setMediaLoading(true);
+      try {
+        const { data } = await axios.get(`/api/card/${selectedCard._id}/media`);
+        setSelectedCardMedia(data.media || []);
+      } catch (err) {
+        setSelectedCardMedia([]);
+      } finally {
+        setMediaLoading(false);
+      }
+    };
+
+    fetchCardMedia();
+  }, [selectedCard?._id]);
+
+  const closeMediaViewer = () => setActiveMediaIndex(null);
+
+  const showNextMedia = () => {
+    if (!selectedCardMedia.length) return;
+    setActiveMediaIndex((prev) => {
+      if (prev === null) return 0;
+      return (prev + 1) % selectedCardMedia.length;
+    });
+  };
+
+  const showPreviousMedia = () => {
+    if (!selectedCardMedia.length) return;
+    setActiveMediaIndex((prev) => {
+      if (prev === null) return 0;
+      return (prev - 1 + selectedCardMedia.length) % selectedCardMedia.length;
+    });
+  };
 
   const handleSearchClick = () => {
     setSearchTerm(searchInput);
@@ -162,7 +212,148 @@ const AllCards = () => {
       answer: card.answer,
       folder: card.folder || ""
     });
+    setEditNewFiles([]);
     setShowEditModal(true);
+  };
+
+  useEffect(() => {
+    const fetchEditMedia = async () => {
+      if (!showEditModal || !editingCard?._id) {
+        setEditMedia([]);
+        return;
+      }
+      setEditMediaLoading(true);
+      try {
+        const { data } = await axios.get(`/api/card/${editingCard._id}/media`);
+        setEditMedia(data.media || []);
+      } catch (err) {
+        setEditMedia([]);
+      } finally {
+        setEditMediaLoading(false);
+      }
+    };
+
+    fetchEditMedia();
+  }, [showEditModal, editingCard?._id]);
+
+  const handleEditFileSelection = (event) => {
+    const selectedFiles = Array.from(event.target.files || []);
+    if (!selectedFiles.length) return;
+
+    const isValidFile = (file) => {
+      const validType =
+        file.type.startsWith("image/") ||
+        file.type.startsWith("video/") ||
+        file.type === "application/pdf";
+      return validType && file.size <= 2 * 1024 * 1024;
+    };
+
+    const invalidFile = selectedFiles.find((file) => !isValidFile(file));
+    if (invalidFile) {
+      toast.error("Only image/video/PDF files up to 2 MB are allowed");
+      event.target.value = "";
+      return;
+    }
+
+    const maxAllowed = 3 - editMedia.length;
+    if (maxAllowed <= 0) {
+      toast.error("A card can have maximum 3 files");
+      event.target.value = "";
+      return;
+    }
+
+    setEditNewFiles((prev) => {
+      const merged = [...prev];
+      selectedFiles.forEach((file) => {
+        const exists = merged.some(
+          (f) =>
+            f.name === file.name &&
+            f.size === file.size &&
+            f.lastModified === file.lastModified
+        );
+        if (!exists) merged.push(file);
+      });
+      if (merged.length > maxAllowed) {
+        toast.error(`You can add only ${maxAllowed} more file(s)`);
+      }
+      return merged.slice(0, maxAllowed);
+    });
+    event.target.value = "";
+  };
+
+  useEffect(() => {
+    const previews = editNewFiles.map((file) => ({
+      key: `${file.name}-${file.lastModified}-${file.size}`,
+      file,
+      previewUrl: file.type === "application/pdf" ? null : URL.createObjectURL(file),
+    }));
+    setEditNewFilePreviews(previews);
+
+    return () => {
+      previews.forEach((item) => {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      });
+    };
+  }, [editNewFiles]);
+
+  const handleDeleteMedia = async (mediaId) => {
+    if (!editingCard?._id || editMediaBusy) return;
+    try {
+      setEditMediaBusy(true);
+      await axios.delete(`/api/card/${editingCard._id}/media/${mediaId}`);
+      setEditMedia((prev) => prev.filter((item) => item.id !== mediaId));
+      toast.success("Attachment deleted");
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Failed to delete attachment");
+    } finally {
+      setEditMediaBusy(false);
+    }
+  };
+
+  const handleUploadEditMedia = async () => {
+    if (!editingCard?._id || !editNewFiles.length || editMediaBusy) return;
+    try {
+      setEditMediaBusy(true);
+      setEditUploadProgress(0);
+      const formData = new FormData();
+      editNewFiles.forEach((file) => formData.append("media", file));
+      const { data } = await axios.post(`/api/card/${editingCard._id}/media`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (progressEvent) => {
+          const total = progressEvent.total || 0;
+          if (!total) return;
+          const percent = Math.round((progressEvent.loaded * 100) / total);
+          setEditUploadProgress(Math.max(1, Math.min(percent, 100)));
+        },
+      });
+      setEditMedia((prev) => [...prev, ...(data.media || [])]);
+      setEditNewFiles([]);
+      setEditNewFilePreviews([]);
+      setEditUploadProgress(0);
+      toast.success("Attachments uploaded");
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Failed to upload attachments");
+    } finally {
+      setEditMediaBusy(false);
+    }
+  };
+
+  const handleDownloadMedia = async (item) => {
+    try {
+      const response = await axios.get(item.download_url || item.url, {
+        responseType: "blob",
+      });
+      const blobUrl = window.URL.createObjectURL(response.data);
+      const anchor = document.createElement("a");
+      anchor.href = blobUrl;
+      anchor.download = item.file_name || "attachment";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      toast.error("Failed to download attachment");
+    }
   };
 
   const handleUpdateCard = async () => {
@@ -461,7 +652,10 @@ const AllCards = () => {
       {selectedCard && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn"
-          onClick={() => setSelectedCard(null)}
+          onClick={() => {
+            setSelectedCard(null);
+            setActiveMediaIndex(null);
+          }}
         >
           <div
             className="bg-[#1e2329] border border-white/10 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
@@ -471,7 +665,10 @@ const AllCards = () => {
               <div className="flex justify-between items-start mb-6">
                 <h2 className="text-xl font-bold text-white">Card Details</h2>
                 <button
-                  onClick={() => setSelectedCard(null)}
+                  onClick={() => {
+                    setSelectedCard(null);
+                    setActiveMediaIndex(null);
+                  }}
                   className="text-gray-400 hover:text-white transition-colors"
                 >
                   ✕
@@ -497,6 +694,17 @@ const AllCards = () => {
                   </div>
                 </div>
 
+                <div className="space-y-2">
+                  <h3 className="text-sm uppercase text-gray-500 font-semibold tracking-wider">Media</h3>
+                  {mediaLoading ? (
+                    <p className="text-sm text-gray-400">Loading attachments...</p>
+                  ) : selectedCardMedia.length ? (
+                    <CardMediaPreview media={selectedCardMedia} onMediaClick={setActiveMediaIndex} />
+                  ) : (
+                    <p className="text-sm text-gray-500">No attachments</p>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="p-3 rounded-lg bg-[#272e36]/50 border border-white/5">
                     <span className="text-xs text-gray-500 block mb-1">Folder</span>
@@ -510,6 +718,77 @@ const AllCards = () => {
               </div>
             </div>
           </div>
+
+          {activeMediaIndex !== null && selectedCardMedia[activeMediaIndex] && (
+            <div
+              className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"
+              onClick={closeMediaViewer}
+            >
+              <div
+                className="w-full max-w-5xl rounded-2xl border border-white/10 bg-[#11161c] p-4 sm:p-6"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex justify-end mb-3">
+                  <button
+                    type="button"
+                    onClick={closeMediaViewer}
+                    className="rounded-md px-3 py-1.5 text-sm text-gray-200 bg-white/10 hover:bg-white/20"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="w-full min-h-[280px] max-h-[70vh] flex items-center justify-center bg-black rounded-lg overflow-hidden">
+                  {selectedCardMedia[activeMediaIndex].media_type === "image" && (
+                    <img
+                      src={selectedCardMedia[activeMediaIndex].url}
+                      alt={selectedCardMedia[activeMediaIndex].file_name || "attachment"}
+                      className="max-w-full max-h-[70vh] object-contain"
+                    />
+                  )}
+
+                  {selectedCardMedia[activeMediaIndex].media_type === "video" && (
+                    <video
+                      src={selectedCardMedia[activeMediaIndex].url}
+                      controls
+                      autoPlay
+                      className="max-w-full max-h-[70vh]"
+                    />
+                  )}
+
+                  {selectedCardMedia[activeMediaIndex].media_type === "file" && (
+                    <iframe
+                      src={selectedCardMedia[activeMediaIndex].url}
+                      title={selectedCardMedia[activeMediaIndex].file_name || "PDF preview"}
+                      className="w-full h-[70vh] bg-white"
+                    />
+                  )}
+                </div>
+
+                <div className="mt-4 flex items-center justify-center gap-4">
+                  <button
+                    type="button"
+                    onClick={showPreviousMedia}
+                    className="rounded-full p-2 bg-white/10 text-white hover:bg-white/20"
+                    aria-label="Previous media"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <span className="text-sm text-gray-300">
+                    {activeMediaIndex + 1} / {selectedCardMedia.length}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={showNextMedia}
+                    className="rounded-full p-2 bg-white/10 text-white hover:bg-white/20"
+                    aria-label="Next media"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -570,6 +849,122 @@ const AllCards = () => {
                       <option key={f} value={f} />
                     ))}
                   </datalist>
+                </div>
+
+                <div className="space-y-3 rounded-xl border border-white/10 bg-[#272e36] p-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm text-gray-300">Attachments ({editMedia.length}/3)</label>
+                  </div>
+
+                  {editMediaLoading ? (
+                    <p className="text-xs text-gray-400">Loading attachments...</p>
+                  ) : editMedia.length ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {editMedia.map((item) => (
+                        <div key={item.id} className="relative rounded-lg overflow-hidden border border-white/10 bg-[#1f262d]">
+                          {item.media_type === "image" && (
+                            <img src={item.url} alt={item.file_name || "attachment"} className="w-full h-28 object-cover" />
+                          )}
+                          {item.media_type === "video" && (
+                            <div className="relative">
+                              <video src={item.url} className="w-full h-28 object-cover pointer-events-none" />
+                              <div className="absolute inset-0 bg-black/35 flex items-center justify-center">
+                                <PlayCircle className="w-8 h-8 text-white" />
+                              </div>
+                            </div>
+                          )}
+                          {item.media_type === "file" && (
+                            <div className="h-28 flex items-center justify-center gap-2 text-indigo-300 bg-[#202733]">
+                              <FileText className="w-5 h-5" />
+                              <span className="text-sm">PDF</span>
+                            </div>
+                          )}
+                          <div className="px-2 py-1.5 text-xs text-gray-300 truncate">{item.file_name || "Attachment"}</div>
+                          <div className="absolute top-2 right-2 flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadMedia(item)}
+                              className="p-1.5 rounded-md text-indigo-200 bg-black/40 hover:bg-indigo-500/30"
+                              title="Download attachment"
+                            >
+                              <Download className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={editMediaBusy}
+                              onClick={() => handleDeleteMedia(item.id)}
+                              className="p-1.5 rounded-md text-red-300 bg-black/40 hover:bg-red-500/30 disabled:opacity-50"
+                              title="Delete attachment"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500">No attachments</p>
+                  )}
+
+                  <div className="space-y-2">
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*,video/*,application/pdf"
+                      onChange={handleEditFileSelection}
+                      disabled={editMedia.length >= 3 || editMediaBusy}
+                      className="block w-full text-sm text-gray-300 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-600 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-indigo-500 disabled:opacity-50"
+                    />
+                    {!!editNewFilePreviews.length && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {editNewFilePreviews.map(({ key, file, previewUrl }) => (
+                          <div key={key} className="rounded-md border border-white/10 bg-[#1f262d] overflow-hidden">
+                            {file.type.startsWith("image/") && previewUrl && (
+                              <img src={previewUrl} alt={file.name} className="w-full h-24 object-cover" />
+                            )}
+                            {file.type.startsWith("video/") && previewUrl && (
+                              <div className="relative">
+                                <video src={previewUrl} className="w-full h-24 object-cover pointer-events-none" />
+                                <div className="absolute inset-0 bg-black/35 flex items-center justify-center">
+                                  <PlayCircle className="w-7 h-7 text-white" />
+                                </div>
+                              </div>
+                            )}
+                            {file.type === "application/pdf" && (
+                              <div className="h-24 flex items-center justify-center gap-2 text-indigo-300 bg-[#202733]">
+                                <FileText className="w-5 h-5" />
+                                <span className="text-sm">PDF</span>
+                              </div>
+                            )}
+                            <div className="px-2 py-1.5 text-xs text-gray-300 truncate flex items-center gap-1.5">
+                              {file.type.startsWith("image/") ? <ImageIcon className="w-3.5 h-3.5 text-blue-300" /> : file.type.startsWith("video/") ? <PlayCircle className="w-3.5 h-3.5 text-purple-300" /> : <FileText className="w-3.5 h-3.5 text-indigo-300" />}
+                              <span className="truncate">{file.name}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleUploadEditMedia}
+                      disabled={!editNewFiles.length || editMediaBusy}
+                      className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm disabled:opacity-50"
+                    >
+                      <Upload className="w-4 h-4" />
+                      {editMediaBusy ? "Uploading..." : "Upload Selected Files"}
+                    </button>
+                    {editMediaBusy && editUploadProgress > 0 && (
+                      <div className="rounded-lg border border-indigo-500/30 bg-indigo-600/10 p-2.5">
+                        <div className="flex justify-between text-xs text-indigo-200 mb-1">
+                          <span>Uploading attachments...</span>
+                          <span>{editUploadProgress}%</span>
+                        </div>
+                        <div className="h-2 rounded-full bg-[#1f262d] overflow-hidden">
+                          <div className="h-full bg-indigo-500 transition-all duration-200" style={{ width: `${editUploadProgress}%` }} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex gap-3 justify-end mt-6">
