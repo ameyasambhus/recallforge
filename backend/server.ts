@@ -13,6 +13,7 @@ import userAuth from "./middleware/userAuth.js";
 import { fileURLToPath } from "url";
 import path from "path";
 import { handleRazorpayWebhook } from "./controllers/billing.controller.js";
+import { handleCloudinaryWebhook } from "./controllers/cloudinary.controller.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -29,6 +30,11 @@ const allowedOrigins = process.env.NODE_ENV === "production"
   : ["http://localhost:5173", "http://localhost:5174", "http://localhost:3000", "http://localhost:4000"];
 
 app.post("/api/billing/razorpay/webhook", express.raw({ type: "application/json" }), handleRazorpayWebhook);
+app.post(
+  "/api/cloudinary-webhook",
+  express.raw({ type: "application/json" }),
+  handleCloudinaryWebhook
+);
 
 app.use(express.json());
 app.use(cookieParser());

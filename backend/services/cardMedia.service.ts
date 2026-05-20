@@ -1,6 +1,10 @@
 import { Readable } from 'node:stream';
 import cloudinary from '../config/cloudinary.js';
-import cardMediaModel, { CardMedia } from '../models/cardMediaModel.js';
+import cardMediaModel, {
+  AwsModerationStatus,
+  CardMedia,
+  ModerationStatus,
+} from '../models/cardMediaModel.js';
 import cardModel from '../models/cardModel.js';
 import axios from 'axios';
 import { assertMediaUploadAllowed } from './subscription.service.js';
@@ -9,6 +13,37 @@ function resolveMediaType(mimeType: string): 'image' | 'video' | 'file' {
   if (mimeType.startsWith('image/')) return 'image';
   if (mimeType.startsWith('video/')) return 'video';
   return 'file';
+}
+
+function getInitialModerationStatus(mimeType: string): {
+  moderation_status: ModerationStatus;
+  aws_moderation_status: AwsModerationStatus;
+} {
+  if (mimeType.startsWith('image/')) {
+    return { moderation_status: 'pending', aws_moderation_status: 'pending' };
+  }
+  return { moderation_status: 'approved', aws_moderation_status: 'not_used' };
+}
+
+function normalizeModerationStatus(value: string | null | undefined): ModerationStatus {
+  const status = String(value || '').toLowerCase();
+  if (status === 'approved' || status === 'rejected') return status;
+  return 'pending';
+}
+
+function getEffectiveModerationStatus(value: string | null | undefined): ModerationStatus {
+  if (!value) return 'approved';
+  const status = String(value).toLowerCase();
+  if (status === 'approved' || status === 'rejected' || status === 'pending') {
+    return status as ModerationStatus;
+  }
+  return 'pending';
+}
+
+function resolveOverallModerationStatus(statuses: ModerationStatus[]): ModerationStatus {
+  if (statuses.some((status) => status === 'rejected')) return 'rejected';
+  if (statuses.length && statuses.every((status) => status === 'approved')) return 'approved';
+  return 'pending';
 }
 
 function getCloudinaryResourceType(mediaType: 'image' | 'video' | 'file') {
@@ -135,6 +170,10 @@ function buildProtectedMediaUrl(cardId: string, mediaId: string | number): strin
   return `/api/card/${cardId}/media/${mediaId}/view`;
 }
 
+function buildProtectedDownloadUrl(cardId: string, mediaId: string | number): string {
+  return `/api/card/${cardId}/media/${mediaId}/download`;
+}
+
 async function deleteFromCloudinaryByPublicId(
   publicId: string,
   resourceType: 'image' | 'video' | 'raw',
@@ -153,16 +192,28 @@ function uploadBufferToCloudinary(
   mimeType: string
 ): Promise<{ secure_url: string; public_id: string; resource_type: string }> {
   const uploadConfig = getUploadConfigByMimeType(mimeType);
+  const isImageUpload = mimeType.startsWith('image/');
+  const notificationUrl =
+    process.env.CLOUDINARY_NOTIFICATION_URL || process.env.CLOUDINARY_WEBHOOK_URL;
 
   return new Promise((resolve, reject) => {
+    const uploadOptions: Record<string, any> = {
+      folder: 'recallforge/card-media',
+      resource_type: uploadConfig.resource_type,
+      type: uploadConfig.type,
+      format: uploadConfig.format,
+      public_id: `${Date.now()}-${fileName.replace(/\s+/g, '-')}`,
+    };
+
+    if (isImageUpload) {
+      uploadOptions.moderation = 'aws_rek';
+      if (notificationUrl) {
+        uploadOptions.notification_url = notificationUrl;
+      }
+    }
+
     const uploadStream = cloudinary.uploader.upload_stream(
-      {
-        folder: 'recallforge/card-media',
-        resource_type: uploadConfig.resource_type,
-        type: uploadConfig.type,
-        format: uploadConfig.format,
-        public_id: `${Date.now()}-${fileName.replace(/\s+/g, '-')}`,
-      },
+      uploadOptions,
       (error, result) => {
         if (error || !result) {
           reject(error || new Error('Cloudinary upload failed'));
@@ -191,7 +242,10 @@ export const cardMediaService = {
     const media = await cardMediaModel.findByCardId(cardId);
     return media.map((item) => ({
       ...item,
+      moderation_status: getEffectiveModerationStatus(item.moderation_status),
+      aws_moderation_status: item.aws_moderation_status ?? 'not_used',
       url: buildProtectedMediaUrl(cardId, item.id),
+      download_url: buildProtectedDownloadUrl(cardId, item.id),
     }));
   },
 
@@ -220,6 +274,7 @@ export const cardMediaService = {
           file.originalname,
           file.mimetype
         );
+        const moderationDefaults = getInitialModerationStatus(file.mimetype);
 
         return {
           card_id: cardId,
@@ -227,6 +282,9 @@ export const cardMediaService = {
           media_type: resolveMediaType(file.mimetype),
           file_name: file.originalname,
           size_bytes: file.size,
+          cloudinary_public_id: uploadResult.public_id,
+          moderation_status: moderationDefaults.moderation_status,
+          aws_moderation_status: moderationDefaults.aws_moderation_status,
         };
       })
     );
@@ -245,6 +303,9 @@ export const cardMediaService = {
       media_type: 'image' | 'video' | 'file';
       file_name: string;
       size_bytes: number;
+      cloudinary_public_id: string;
+      moderation_status: ModerationStatus;
+      aws_moderation_status: AwsModerationStatus;
     }> = [];
 
     try {
@@ -254,6 +315,7 @@ export const cardMediaService = {
           file.originalname,
           file.mimetype
         );
+        const moderationDefaults = getInitialModerationStatus(file.mimetype);
         uploadedAssets.push({
           public_id: uploadResult.public_id,
           resource_type: uploadResult.resource_type,
@@ -263,6 +325,9 @@ export const cardMediaService = {
           media_type: resolveMediaType(file.mimetype),
           file_name: file.originalname,
           size_bytes: file.size,
+          cloudinary_public_id: uploadResult.public_id,
+          moderation_status: moderationDefaults.moderation_status,
+          aws_moderation_status: moderationDefaults.aws_moderation_status,
         });
       }
 
@@ -289,6 +354,9 @@ export const cardMediaService = {
         media_type: file.media_type,
         file_name: file.file_name,
         size_bytes: file.size_bytes,
+        cloudinary_public_id: file.cloudinary_public_id ?? null,
+        moderation_status: file.moderation_status ?? 'approved',
+        aws_moderation_status: file.aws_moderation_status ?? 'not_used',
       }))
     );
   },
@@ -444,5 +512,40 @@ export const cardMediaService = {
       acceptRanges: response.headers['accept-ranges'],
       fileName: media.file_name || undefined,
     };
+  },
+
+  async applyModerationResult(params: {
+    publicId: string;
+    provider: string;
+    status: string;
+  }) {
+    if (params.provider !== 'aws_rek') {
+      return null;
+    }
+
+    const media = await cardMediaModel.findByCloudinaryPublicId(params.publicId);
+    if (!media) {
+      return null;
+    }
+
+    const normalizedStatus = normalizeModerationStatus(params.status);
+    const overallStatus = resolveOverallModerationStatus([normalizedStatus]);
+
+    const updated = await cardMediaModel.updateModerationById(media.id, {
+      moderation_status: overallStatus,
+      aws_moderation_status: normalizedStatus,
+    });
+
+    if (overallStatus === 'rejected' && media.media_type === 'image') {
+      try {
+        await deleteFromCloudinaryByPublicId(params.publicId, 'image', 'authenticated');
+      } catch (err) {
+        console.error(`Failed to delete rejected Cloudinary asset ${params.publicId}:`, err);
+      }
+      await cardMediaModel.deleteById(media.id);
+      return { ...updated, deleted: true };
+    }
+
+    return updated;
   },
 };

@@ -54,6 +54,34 @@ const getRelativeTimeString = (dateInput) => {
   return { relative, formattedDate };
 };
 
+const normalizeModerationStatus = (status) => {
+  const value = String(status || "").toLowerCase();
+  if (value === "approved" || value === "pending" || value === "rejected") {
+    return value;
+  }
+  return "pending";
+};
+
+const getImageModerationStatus = (item) => {
+  if (!item || item.media_type !== "image") return "approved";
+  return normalizeModerationStatus(item.moderation_status);
+};
+
+const getModerationCopy = (status) => {
+  if (status === "rejected") {
+    return {
+      label: "Rejected",
+      description: "This image was removed after review.",
+      tone: "text-red-400",
+    };
+  }
+  return {
+    label: "Pending review",
+    description: "This image is being reviewed.",
+    tone: "text-amber-300",
+  };
+};
+
 const ExpandableText = ({ text, limit = 150, isMarkdown = false }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -352,7 +380,7 @@ const AllCards = () => {
 
     const invalidFile = selectedFiles.find((file) => !isValidFile(file));
     if (invalidFile) {
-      toast.error("Only image/video/PDF files up to 2 MB are allowed");
+      toast.error("Only image (including GIF), video, or PDF files up to 2 MB are allowed");
       return;
     }
 
@@ -491,6 +519,15 @@ const AllCards = () => {
 
   const handleDownloadMedia = async (item) => {
     try {
+      const status = getImageModerationStatus(item);
+      if (item?.media_type === "image" && status !== "approved") {
+        const message =
+          status === "rejected"
+            ? "This image was rejected and cannot be downloaded."
+            : "This image is pending review and cannot be downloaded yet.";
+        toast.error(message);
+        return;
+      }
       const response = await axios.get(item.download_url || item.url, {
         responseType: "blob",
       });
@@ -563,6 +600,12 @@ const AllCards = () => {
     const end = Math.min(page * limit, totalCards);
     return `${start}-${end} of ${totalCards}`;
   };
+
+  const activeMedia = activeMediaIndex !== null ? selectedCardMedia[activeMediaIndex] : null;
+  const activeMediaStatus = getImageModerationStatus(activeMedia);
+  const isActiveMediaBlocked =
+    activeMedia?.media_type === "image" && activeMediaStatus !== "approved";
+  const activeMediaCopy = isActiveMediaBlocked ? getModerationCopy(activeMediaStatus) : null;
 
   return (
     <div className="w-full max-w-7xl mx-auto p-2 md:p-6 relative">
@@ -857,15 +900,32 @@ const AllCards = () => {
             <div className="p-6">
               <div className="flex justify-between items-start mb-6">
                 <h2 className="text-xl font-bold text-white">Card Details</h2>
-                <button
-                  onClick={() => {
-                    setSelectedCard(null);
-                    setActiveMediaIndex(null);
-                  }}
-                  className="text-gray-400 hover:text-white transition-colors"
-                >
-                  ✕
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setEditingCard(selectedCard);
+                      setEditForm({
+                        question: selectedCard.question,
+                        answer: selectedCard.answer,
+                        folder: selectedCard.folder || "",
+                      });
+                      setEditNewFiles([]);
+                      setShowEditModal(true);
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-300 hover:bg-blue-500/20 hover:text-blue-200 transition-colors text-sm"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedCard(null);
+                      setActiveMediaIndex(null);
+                    }}
+                    className="text-gray-400 hover:text-white transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-6">
@@ -928,7 +988,7 @@ const AllCards = () => {
             </div>
           </div>
 
-          {activeMediaIndex !== null && selectedCardMedia[activeMediaIndex] && (
+          {activeMediaIndex !== null && activeMedia && (
             <div
               className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"
               onClick={closeMediaViewer}
@@ -948,27 +1008,36 @@ const AllCards = () => {
                 </div>
 
                 <div className="w-full min-h-[280px] max-h-[70vh] flex items-center justify-center bg-black rounded-lg overflow-hidden">
-                  {selectedCardMedia[activeMediaIndex].media_type === "image" && (
+                  {activeMedia.media_type === "image" && !isActiveMediaBlocked && (
                     <img
-                      src={selectedCardMedia[activeMediaIndex].url}
-                      alt={selectedCardMedia[activeMediaIndex].file_name || "attachment"}
+                      src={activeMedia.url}
+                      alt={activeMedia.file_name || "attachment"}
                       className="max-w-full max-h-[70vh] object-contain"
                     />
                   )}
 
-                  {selectedCardMedia[activeMediaIndex].media_type === "video" && (
+                  {activeMedia.media_type === "image" && isActiveMediaBlocked && activeMediaCopy && (
+                    <div className="text-center px-4">
+                      <p className={`text-xs uppercase tracking-wider ${activeMediaCopy.tone}`}>
+                        {activeMediaCopy.label}
+                      </p>
+                      <p className="text-sm text-gray-400 mt-2">{activeMediaCopy.description}</p>
+                    </div>
+                  )}
+
+                  {activeMedia.media_type === "video" && (
                     <video
-                      src={selectedCardMedia[activeMediaIndex].url}
+                      src={activeMedia.url}
                       controls
                       autoPlay
                       className="max-w-full max-h-[70vh]"
                     />
                   )}
 
-                  {selectedCardMedia[activeMediaIndex].media_type === "file" && (
+                  {activeMedia.media_type === "file" && (
                     <iframe
-                      src={selectedCardMedia[activeMediaIndex].url}
-                      title={selectedCardMedia[activeMediaIndex].file_name || "PDF preview"}
+                      src={activeMedia.url}
+                      title={activeMedia.file_name || "PDF preview"}
                       className="w-full h-[70vh] bg-white"
                     />
                   )}
@@ -1071,47 +1140,67 @@ const AllCards = () => {
                     <p className="text-xs text-gray-400">Loading attachments...</p>
                   ) : editMedia.length ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {editMedia.map((item) => (
-                        <div key={item.id} className="relative rounded-lg overflow-hidden border border-white/10 bg-[#1f262d]">
-                          {item.media_type === "image" && (
-                            <img src={item.url} alt={item.file_name || "attachment"} className="w-full h-28 object-cover" />
-                          )}
-                          {item.media_type === "video" && (
-                            <div className="relative">
-                              <video src={item.url} className="w-full h-28 object-cover pointer-events-none" />
-                              <div className="absolute inset-0 bg-black/35 flex items-center justify-center">
-                                <PlayCircle className="w-8 h-8 text-white" />
+                      {editMedia.map((item) => {
+                        const status = getImageModerationStatus(item);
+                        const isBlocked = item.media_type === "image" && status !== "approved";
+                        const copy = isBlocked ? getModerationCopy(status) : null;
+                        return (
+                          <div key={item.id} className="relative rounded-lg overflow-hidden border border-white/10 bg-[#1f262d]">
+                            {item.media_type === "image" && !isBlocked && (
+                              <img src={item.url} alt={item.file_name || "attachment"} className="w-full h-28 object-cover" />
+                            )}
+                            {item.media_type === "image" && isBlocked && copy && (
+                              <div className="h-28 flex items-center justify-center bg-[#202733] px-2 text-center">
+                                <div>
+                                  <p className={`text-[10px] uppercase tracking-wider ${copy.tone}`}>{copy.label}</p>
+                                  <p className="text-[11px] text-gray-400 mt-1">{copy.description}</p>
+                                </div>
                               </div>
+                            )}
+                            {item.media_type === "video" && (
+                              <div className="relative">
+                                <video src={item.url} className="w-full h-28 object-cover pointer-events-none" />
+                                <div className="absolute inset-0 bg-black/35 flex items-center justify-center">
+                                  <PlayCircle className="w-8 h-8 text-white" />
+                                </div>
+                              </div>
+                            )}
+                            {item.media_type === "file" && (
+                              <div className="h-28 flex items-center justify-center gap-2 text-indigo-300 bg-[#202733]">
+                                <FileText className="w-5 h-5" />
+                                <span className="text-sm">PDF</span>
+                              </div>
+                            )}
+                            <div className="px-2 py-1.5 text-xs text-gray-300 truncate">{item.file_name || "Attachment"}</div>
+                            <div className="absolute top-2 right-2 flex items-center gap-1">
+                              <button
+                                type="button"
+                                disabled={isBlocked}
+                                onClick={() => handleDownloadMedia(item)}
+                                className={`p-1.5 rounded-md text-indigo-200 bg-black/40 hover:bg-indigo-500/30 ${
+                                  isBlocked ? "opacity-50 cursor-not-allowed hover:bg-black/40" : ""
+                                }`}
+                                title={
+                                  isBlocked
+                                    ? "Attachment unavailable until approved"
+                                    : "Download attachment"
+                                }
+                              >
+                                <Download className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={editMediaBusy}
+                                onClick={() => handleDeleteMedia(item.id)}
+                                className="p-1.5 rounded-md text-red-300 bg-black/40 hover:bg-red-500/30 disabled:opacity-50"
+                                title="Delete attachment"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
                             </div>
-                          )}
-                          {item.media_type === "file" && (
-                            <div className="h-28 flex items-center justify-center gap-2 text-indigo-300 bg-[#202733]">
-                              <FileText className="w-5 h-5" />
-                              <span className="text-sm">PDF</span>
-                            </div>
-                          )}
-                          <div className="px-2 py-1.5 text-xs text-gray-300 truncate">{item.file_name || "Attachment"}</div>
-                          <div className="absolute top-2 right-2 flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => handleDownloadMedia(item)}
-                              className="p-1.5 rounded-md text-indigo-200 bg-black/40 hover:bg-indigo-500/30"
-                              title="Download attachment"
-                            >
-                              <Download className="w-4 h-4" />
-                            </button>
-                            <button
-                              type="button"
-                              disabled={editMediaBusy}
-                              onClick={() => handleDeleteMedia(item.id)}
-                              className="p-1.5 rounded-md text-red-300 bg-black/40 hover:bg-red-500/30 disabled:opacity-50"
-                              title="Delete attachment"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : (
                     <p className="text-xs text-gray-500">No attachments</p>

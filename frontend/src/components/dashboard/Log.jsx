@@ -214,7 +214,7 @@ const Log = () => {
 
     const invalidFile = selectedFiles.find((file) => !isValidFile(file));
     if (invalidFile) {
-      toast.error("Only image/video/PDF files up to 2 MB are allowed");
+      toast.error("Only image (including GIF), video, or PDF files up to 2 MB are allowed");
       return;
     }
 

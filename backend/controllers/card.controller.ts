@@ -331,6 +331,8 @@ export const deleteCardMedia = async (req: Request, res: Response) => {
         ? 404
         : errorMessage === 'Forbidden'
           ? 403
+          : errorMessage === 'Media not approved'
+            ? 403
           : 400;
     res.status(statusCode).json({ success: false, error: errorMessage });
   }
@@ -371,6 +373,8 @@ export const viewCardMedia = async (req: Request, res: Response) => {
         ? 404
         : errorMessage === 'Forbidden'
           ? 403
+          : errorMessage === 'Media not approved'
+            ? 403
           : 400;
     res.status(statusCode).json({ success: false, error: errorMessage });
   }
@@ -410,6 +414,8 @@ export const downloadCardMedia = async (req: Request, res: Response) => {
         ? 404
         : errorMessage === 'Forbidden'
           ? 403
+          : errorMessage === 'Media not approved'
+            ? 403
           : 400;
     res.status(statusCode).json({ success: false, error: errorMessage });
   }

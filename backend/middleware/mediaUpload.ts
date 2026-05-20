@@ -15,7 +15,7 @@ const fileFilter: multer.Options['fileFilter'] = (_req, file, cb) => {
     return;
   }
 
-  cb(new Error('Only image, video, and PDF files are allowed'));
+  cb(new Error('Only image (including GIF), video, and PDF files are allowed'));
 };
 
 const mediaUpload = multer({
