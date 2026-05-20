@@ -8,6 +8,7 @@ import AllCards from "../components/dashboard/AllCards";
 import Folders from "../components/dashboard/Folders";
 import Lists from "../components/dashboard/Lists";
 import ListView from "../components/dashboard/ListView";
+import Streak from "../components/dashboard/Streak";
 
 import { User, LogOut, Settings, FileJson, KeyRound } from "lucide-react";
 import axios from "axios";
@@ -39,27 +40,43 @@ const TopNav = () => {
             RecallForge
           </span>
           {userData && (
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1 ml-4 rounded-full bg-white/5 border border-white/10" title="Daily Streak">
+            <Link 
+              to="/app/streak" 
+              className="hidden sm:flex items-center gap-2 px-3 py-1 ml-4 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all duration-200 cursor-pointer active:scale-95 hover:border-indigo-500/50 hover:text-indigo-400 group" 
+              title="View Daily Streak Grid"
+            >
               <span className="text-lg leading-none">
                 {userData.currentStreak > 0 ? "🔥" : "😢"}
               </span>
-              <span className="font-mono font-bold text-white">
+              <span className="font-mono font-bold text-white group-hover:text-indigo-300">
                 {userData.currentStreak || 0}
               </span>
-            </div>
+              <span className="h-4 w-px bg-white/10 mx-1"></span>
+              <span className="text-xs text-neutral-400 group-hover:text-indigo-400 transition-colors">
+                View Activity
+              </span>
+            </Link>
           )}
         </div>
 
         <nav aria-label="Primary" className="flex items-center gap-3">
           {userData && (
-            <div className="sm:hidden flex items-center gap-1 px-2 py-1 rounded-full bg-white/5 border border-white/10">
+            <Link 
+              to="/app/streak" 
+              className="sm:hidden flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all duration-200 cursor-pointer active:scale-95 hover:border-indigo-500/50 hover:text-indigo-400 group" 
+              title="View Daily Streak Grid"
+            >
               <span className="text-base">
                 {userData.currentStreak > 0 ? "🔥" : "😢"}
               </span>
-              <span className="text-sm font-bold text-white">
+              <span className="text-sm font-bold text-white group-hover:text-indigo-300">
                 {userData.currentStreak || 0}
               </span>
-            </div>
+              <span className="h-3.5 w-px bg-white/10 mx-0.5"></span>
+              <span className="text-[10px] text-neutral-400 group-hover:text-indigo-400 transition-colors">
+                View Activity
+              </span>
+            </Link>
           )}
           <div className="md:flex items-center gap-3">
             <Link to="/app/log" className="btn btn-primary bg-transparent text-sm">
@@ -160,6 +177,7 @@ export default function Dashboard() {
           <Route path="lists" element={<Lists />} />
           <Route path="lists/:id" element={<ListView />} />
           <Route path="settings" element={<Setting />} />
+          <Route path="streak" element={<Streak />} />
         </Routes>
       </main>
     </div>
