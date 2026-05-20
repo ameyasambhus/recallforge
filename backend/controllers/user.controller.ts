@@ -1,68 +1,17 @@
 import { Request, Response } from 'express';
-import userModel from '../models/userModel.js';
-import cardModel from '../models/cardModel.js';
-import folderModel from '../models/folderModel.js';
-import pool from '../config/postgres.js';
-import { cardService } from '../services/card.service.js';
-import { getSubscriptionSnapshot } from '../services/subscription.service.js';
+import { userService } from '../services/user.service.js';
 
 export const getUserData = async (req: Request, res: Response) => {
   try {
     const userId = req.userId as string;
-    const user = await userModel.findById(userId);
-    if (!user) {
+    const userData = await userService.getUserData(userId);
+    if (!userData) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    // Check / reset streak based on last review date
-    let currentStreak = user.current_streak;
-    const lastReviewDate = await cardService.getLastReviewDate(user.id);
-
-    if (lastReviewDate) {
-      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-      // pg DATE column is already a plain 'YYYY-MM-DD' string — use it directly
-      const lastReviewStr = String(lastReviewDate).slice(0, 10);
-
-      if (lastReviewStr !== todayStr && lastReviewStr !== yesterdayStr) {
-        currentStreak = 0;
-        if (user.current_streak !== 0) {
-          await userModel.update(user.id, { current_streak: 0 });
-        }
-      }
-    } else if (currentStreak > 0) {
-      currentStreak = 0;
-      await userModel.update(user.id, { current_streak: 0 });
-    }
-
-    // Fetch review history from review_history table
-    // Cast review_date to TEXT so pg returns 'YYYY-MM-DD' directly (avoids UTC Date object shift)
-    const historyResult = await pool.query<{ review_date: string; cards_reviewed: number }>(
-      `SELECT review_date::text, cards_reviewed
-       FROM review_history WHERE user_id = $1 ORDER BY review_date`,
-      [userId]
-    );
-
-    const reviewHistory: Record<string, number> = {};
-    for (const row of historyResult.rows) {
-      // review_date is now a plain 'YYYY-MM-DD' string — no UTC shift risk
-      reviewHistory[row.review_date] = Number(row.cards_reviewed);
-    }
-
-    const subscription = await getSubscriptionSnapshot(user.id);
-
     res.json({
       success: true,
-      userData: {
-        name: user.name,
-        email: user.email,
-        isAccountVerified: user.is_account_verified,
-        currentStreak,
-        reviewHistory,
-        subscription,
-      },
+      userData,
     });
   } catch (error) {
     res.json({
@@ -77,14 +26,7 @@ export const deleteUser = async (req: Request, res: Response) => {
     const userId = req.userId as string;
     console.log(`[deleteUser] Attempting to delete user with ID: ${userId}`);
 
-    // CASCADE is set in DB, but explicit deletion is fine too
-    await cardModel.deleteByUser(userId);
-    console.log(`[deleteUser] Deleted cards for user ${userId}.`);
-
-    await folderModel.deleteByUser(userId);
-    console.log(`[deleteUser] Deleted folders for user ${userId}.`);
-
-    const deletedUser = await userModel.deleteById(userId);
+    const deletedUser = await userService.deleteUser(userId);
     if (!deletedUser) {
       console.log(`[deleteUser] User not found for ID: ${userId}`);
       return res.status(404).json({ success: false, message: 'User not found' });
@@ -94,6 +36,64 @@ export const deleteUser = async (req: Request, res: Response) => {
     res.json({ success: true, message: 'Account deleted successfully' });
   } catch (error) {
     console.error(`[deleteUser] Error deleting user:`, error);
+    res.json({
+      success: false,
+      message: error instanceof Error ? error.message : 'An error occurred',
+    });
+  }
+};
+
+export const getSettings = async (req: Request, res: Response) => {
+  try {
+    const userId = req.userId as string;
+    const settings = await userService.getSettings(userId);
+    res.json({ success: true, settings });
+  } catch (error) {
+    res.json({
+      success: false,
+      message: error instanceof Error ? error.message : 'An error occurred',
+    });
+  }
+};
+
+export const updateSettings = async (req: Request, res: Response) => {
+  try {
+    const userId = req.userId as string;
+    const { easy_bonus, interval_modifier, max_interval, min_ef } = req.body;
+
+    // Validate easy_bonus (1.0 - 2.0)
+    const eb = Number(easy_bonus);
+    if (isNaN(eb) || eb < 1.0 || eb > 2.0) {
+      return res.json({ success: false, message: 'Easy bonus must be between 1.0 and 2.0' });
+    }
+
+    // Validate interval_modifier (0.5 - 2.0)
+    const im = Number(interval_modifier);
+    if (isNaN(im) || im < 0.5 || im > 2.0) {
+      return res.json({ success: false, message: 'Interval modifier must be between 0.5 and 2.0' });
+    }
+
+    // Validate max_interval (1 - 36500)
+    const mi = Number(max_interval);
+    if (isNaN(mi) || !Number.isInteger(mi) || mi < 1 || mi > 36500) {
+      return res.json({ success: false, message: 'Max interval must be an integer between 1 and 36500' });
+    }
+
+    // Validate min_ef (1.1 - 2.5)
+    const me = Number(min_ef);
+    if (isNaN(me) || me < 1.1 || me > 2.5) {
+      return res.json({ success: false, message: 'Minimum ease factor must be between 1.1 and 2.5' });
+    }
+
+    const updatedSettings = await userService.updateSettings(userId, {
+      easy_bonus: eb,
+      interval_modifier: im,
+      max_interval: mi,
+      min_ef: me,
+    });
+
+    res.json({ success: true, settings: updatedSettings });
+  } catch (error) {
     res.json({
       success: false,
       message: error instanceof Error ? error.message : 'An error occurred',

@@ -7,8 +7,7 @@ import {
   updateService,
 } from '../services/card.service.js';
 import { cardMediaService } from '../services/cardMedia.service.js';
-import cardMediaModel from '../models/cardMediaModel.js';
-import folderModel from '../models/folderModel.js';
+import { folderService } from '../services/folder.service.js';
 import {
   assertMediaUploadAllowed,
   consumeAiUsageOrThrow,
@@ -33,15 +32,7 @@ export const createCard = async (req: Request, res: Response) => {
 
     if (files.length) {
       const uploadedFiles = await cardMediaService.uploadFiles(files);
-      await cardMediaModel.createMany(
-        uploadedFiles.map((file) => ({
-          card_id: card.id,
-          url: file.url,
-          media_type: file.media_type,
-          file_name: file.file_name,
-          size_bytes: file.size_bytes,
-        }))
-      );
+      await cardMediaService.associateMediaWithCard(card.id, uploadedFiles);
     }
 
     res.status(201).json({ success: true, card });
@@ -120,7 +111,7 @@ export const getAllCards = async (req: Request, res: Response) => {
 
 export const getFolders = async (req: Request, res: Response) => {
   try {
-    const folders = await folderModel.findByUser(String(req.user.id));
+    const folders = await folderService.getFolders(String(req.user.id));
     res.json({ success: true, folders: folders.map(f => ({ _id: f.id, name: f.name })) });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'An error occurred' });
@@ -131,7 +122,7 @@ export const updateFolder = async (req: Request, res: Response) => {
   try {
     const { name } = req.body;
     if (!name) return res.status(400).json({ error: 'Folder name is required' });
-    const updatedFolder = await folderModel.update({ id: req.params.id, user_id: String(req.user.id) }, name);
+    const updatedFolder = await folderService.updateFolder(String(req.user.id), req.params.id, name);
     if (!updatedFolder) return res.status(404).json({ error: 'Folder not found' });
     res.json({ success: true, folder: { _id: updatedFolder.id, name: updatedFolder.name } });
   } catch (err) {
@@ -141,7 +132,7 @@ export const updateFolder = async (req: Request, res: Response) => {
 
 export const deleteFolder = async (req: Request, res: Response) => {
   try {
-    await folderModel.deleteById({ id: req.params.id, user_id: String(req.user.id) });
+    await folderService.deleteFolder(String(req.user.id), req.params.id);
     res.json({ success: true, message: 'Folder deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'An error occurred' });

@@ -1,26 +1,47 @@
 import { GoogleGenAI } from '@google/genai';
 import cardModel from '../models/cardModel.js';
 import userModel from '../models/userModel.js';
+import userSettingsModel from '../models/userSettingsModel.js';
 import pool from '../config/postgres.js';
+import { redis } from '../config/upstash.js';
+
+export async function invalidateUserCardsCache(userId: string | number) {
+  try {
+    const pattern = `cards:${userId}:*`;
+    const keys = await redis.keys(pattern);
+    if (keys && keys.length > 0) {
+      await redis.del(...keys);
+    }
+  } catch (err) {
+    console.error(`Failed to invalidate cache for user ${userId}:`, err);
+  }
+}
+
 
 export const createService = {
   async create(userId: string, question: string, answer: string, folder: string | undefined) {
-    return await cardModel.create({ user_id: userId, question, answer, folder });
+    const card = await cardModel.create({ user_id: userId, question, answer, folder });
+    await invalidateUserCardsCache(userId);
+    return card;
   },
 };
 
 export const updateService = {
   async update(userId: string, cardId: string, question: string, answer: string, folder: string) {
-    return await cardModel.findAndUpdate(
+    const card = await cardModel.findAndUpdate(
       { id: cardId, user_id: userId },
       { question, answer, folder }
     );
+    await invalidateUserCardsCache(userId);
+    return card;
   },
 };
 
 export const deleteService = {
   async delete(userId: string, cardId: string) {
-    return await cardModel.findAndDelete({ id: cardId, user_id: userId });
+    const result = await cardModel.findAndDelete({ id: cardId, user_id: userId });
+    await invalidateUserCardsCache(userId);
+    return result;
   },
 };
 
@@ -52,6 +73,30 @@ export const cardService = {
     sortBy: string,
     sortOrder: string
   ) {
+    const cacheKey = `cards:${userId}:page:${page}`;
+    const isDefaultQuery = !folder && !search && limit === 10 && sortBy === 'dueDate' && sortOrder === 'asc';
+
+    if (isDefaultQuery) {
+      try {
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+          const parsed = typeof cachedData === 'string' ? JSON.parse(cachedData) : cachedData;
+          if (
+            parsed &&
+            Array.isArray(parsed.cards) &&
+            typeof parsed.total === 'number' &&
+            Array.isArray(parsed.folders)
+          ) {
+            return parsed;
+          }
+          // Delete stale/invalid cache format
+          await redis.del(cacheKey);
+        }
+      } catch (err) {
+        console.error('Redis cache hit error:', err);
+      }
+    }
+
     const offset = (page - 1) * limit;
     const { cards, total, folderNames } = await cardModel.findAll({
       userId,
@@ -62,12 +107,29 @@ export const cardService = {
       limit,
       offset,
     });
-    return { cards, total, folders: folderNames };
+
+    const result = { cards, total, folders: folderNames };
+
+    if (isDefaultQuery) {
+      try {
+        await redis.set(cacheKey, JSON.stringify(result), { ex: 30 });
+      } catch (err) {
+        console.error('Redis cache store error:', err);
+      }
+    }
+
+    return result;
   },
 
   async reviewCardService(userId: string, cardId: string, quality: number) {
     const card = await cardModel.findOne({ id: cardId, user_id: userId });
     if (!card) return null;
+
+    // Fetch user settings (fallback to creating defaults if none exists)
+    let settings = await userSettingsModel.findByUserId(userId);
+    if (!settings) {
+      settings = await userSettingsModel.createDefault(userId);
+    }
 
     let ef = Number(card.ef);
     let { repetitions, interval } = card;
@@ -77,16 +139,30 @@ export const cardService = {
       interval = 1;
     } else {
       ef = ef + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
-      if (ef < 1.3) ef = 1.3;
-      repetitions += 1;
+      if (ef < Number(settings.min_ef)) {
+        ef = Number(settings.min_ef);
+      }
 
+      repetitions += 1;
       if (repetitions === 1) {
         interval = 1;
       } else if (repetitions === 2) {
-        interval = Math.round(1 * ef);
+        interval = 6;
       } else {
-        interval = Math.round(interval * ef);
+        interval = Math.round(interval * ef * Number(settings.interval_modifier));
       }
+
+      if (quality === 5) {
+        interval = Math.round(interval * Number(settings.easy_bonus));
+      }
+    }
+
+    // Bound limits
+    if (interval > Number(settings.max_interval)) {
+      interval = Number(settings.max_interval);
+    }
+    if (interval < 1) {
+      interval = 1;
     }
 
     const istStartOfToday = this.getISTStartOfDay();
@@ -97,6 +173,9 @@ export const cardService = {
       { id: cardId, user_id: userId },
       { ef, repetitions, interval, due_date: nextDue }
     );
+
+    // Invalidate user card cache on review
+    await invalidateUserCardsCache(userId);
 
     // Update streak and review history
     const user = await userModel.findById(userId);

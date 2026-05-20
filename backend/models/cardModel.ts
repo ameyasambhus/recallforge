@@ -174,6 +174,7 @@ const cardModel = {
       folder: 'f.name',
       dueDate: 'c.due_date',
       createdAt: 'c.created_at',
+      updatedAt: 'c.updated_at',
     };
     const sortField = validSortFields[opts.sortBy ?? 'dueDate'] ?? 'c.due_date';
     const sortDir = opts.sortOrder === 'desc' ? 'DESC' : 'ASC';

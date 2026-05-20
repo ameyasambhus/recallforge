@@ -8,9 +8,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
+// Create a single Redis client instance using Upstash
+export const redis = Redis.fromEnv();
+
 //rate limiter - max 10 requests per 20 seconds allowed
 const ratelimit = new Ratelimit({
-  redis: Redis.fromEnv(),
+  redis,
   limiter: Ratelimit.slidingWindow(10, "20s"),
 });
 

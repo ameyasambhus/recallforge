@@ -1,12 +1,58 @@
 import React, { useContext, useEffect, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { ChevronLeft, ChevronRight, Trash2, Calendar, Folder, Search, ArrowUpDown, X, Edit2, ListPlus, Upload, FileText, PlayCircle, Image as ImageIcon, Download } from "lucide-react";
+import { ChevronLeft, ChevronRight, Trash2, Calendar, Folder, Search, ArrowUpDown, X, Edit2, ListPlus, Upload, FileText, PlayCircle, Image as ImageIcon, Download, Clock } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import MDEditor from "@uiw/react-md-editor";
 import CardMediaPreview from "./CardMediaPreview";
 import { AppContent } from "../../context/AppContext";
 import { MAX_FILE_SIZE_BYTES, PLAN_LABELS, PLAN_LIMITS } from "../../constants/subscription";
+
+const getRelativeTimeString = (dateInput) => {
+  if (!dateInput) return { relative: "N/A", formattedDate: "N/A" };
+  const date = new Date(dateInput);
+  const now = new Date();
+  
+  const formattedDate = `${date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  })}, ${date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true
+  })}`;
+
+  const diffInMs = now.getTime() - date.getTime();
+  if (diffInMs < 0) {
+    return { relative: "just now", formattedDate };
+  }
+  const diffInSecs = Math.floor(diffInMs / 1000);
+  const diffInMins = Math.floor(diffInSecs / 60);
+  const diffInHours = Math.floor(diffInMins / 60);
+  const diffInDays = Math.floor(diffInHours / 24);
+  const diffInMonths = Math.floor(diffInDays / 30);
+  const diffInYears = Math.floor(diffInDays / 365);
+
+  let relative = "";
+  if (diffInSecs < 30) {
+    relative = "just now";
+  } else if (diffInSecs < 60) {
+    relative = "less than a minute ago";
+  } else if (diffInMins < 60) {
+    relative = diffInMins === 1 ? "1 minute ago" : `${diffInMins} minutes ago`;
+  } else if (diffInHours < 24) {
+    relative = diffInHours === 1 ? "1 hour ago" : `${diffInHours} hours ago`;
+  } else if (diffInDays < 30) {
+    relative = diffInDays === 1 ? "yesterday" : `${diffInDays} days ago`;
+  } else if (diffInMonths < 12) {
+    relative = diffInMonths === 1 ? "1 month ago" : `${diffInMonths} months ago`;
+  } else {
+    relative = diffInYears === 1 ? "1 year ago" : `${diffInYears} years ago`;
+  }
+
+  return { relative, formattedDate };
+};
 
 const ExpandableText = ({ text, limit = 150, isMarkdown = false }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -541,6 +587,7 @@ const AllCards = () => {
               <option value="question" className="bg-[#1f262d] text-gray-300">Sort by Question</option>
               <option value="folder" className="bg-[#1f262d] text-gray-300">Sort by Folder</option>
               <option value="createdAt" className="bg-[#1f262d] text-gray-300">Sort by Created</option>
+              <option value="updatedAt" className="bg-[#1f262d] text-gray-300">Sort by Last Updated</option>
             </select>
             <button
               onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
@@ -574,6 +621,7 @@ const AllCards = () => {
                   </th>
                   <th className="px-6 py-4">Question</th>
                   <th className="px-6 py-4 whitespace-nowrap">Folder</th>
+                  <th className="px-6 py-4 whitespace-nowrap">Activity</th>
                   <th className="px-6 py-4 whitespace-nowrap">Due Date</th>
                   <th className="px-6 py-4 text-right">Actions</th>
                 </tr>
@@ -604,6 +652,25 @@ const AllCards = () => {
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-indigo-600/10 text-indigo-400 border border-indigo-600/20 whitespace-nowrap">
                           {card.folder || "Uncategorized"}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 text-gray-400 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-3.5 h-3.5 opacity-60 text-indigo-400 shrink-0" />
+                          {(() => {
+                            const isUpdated = card.updatedAt && new Date(card.updatedAt).getTime() - new Date(card.createdAt).getTime() > 1000;
+                            const dateObj = isUpdated ? card.updatedAt : card.createdAt;
+                            const { relative, formattedDate } = getRelativeTimeString(dateObj);
+                            return (
+                              <div className="flex flex-col animate-fadeIn">
+                                <span className="text-xs text-gray-300 font-medium">
+                                  <span className="text-gray-400 text-[10px] mr-1 uppercase font-semibold tracking-wider">{isUpdated ? "Updated" : "Created"}</span>
+                                  {relative}
+                                </span>
+                                <span className="text-xs text-gray-400 font-light mt-0.5">{formattedDate}</span>
+                              </div>
+                            );
+                          })()}
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-gray-400 whitespace-nowrap">
                         <div className="flex items-center gap-2">
@@ -641,7 +708,7 @@ const AllCards = () => {
                 })}
                 {cards.length === 0 && (
                   <tr>
-                    <td colSpan="5" className="px-6 py-16 text-center text-gray-500">
+                    <td colSpan="6" className="px-6 py-16 text-center text-gray-500">
                       <div className="flex flex-col items-center gap-2">
                         <Folder className="w-8 h-8 opacity-20" />
                         <p>No cards found.</p>
@@ -779,14 +846,30 @@ const AllCards = () => {
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 rounded-lg bg-[#272e36]/50 border border-white/5">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                  <div className="p-3 rounded-lg bg-[#272e36]/50 border border-white/5 col-span-2 sm:col-span-1">
                     <span className="text-xs text-gray-500 block mb-1">Folder</span>
                     <span className="text-blue-400 font-medium">{selectedCard.folder || "Uncategorized"}</span>
                   </div>
                   <div className="p-3 rounded-lg bg-[#272e36]/50 border border-white/5">
                     <span className="text-xs text-gray-500 block mb-1">Due Date</span>
                     <span className="text-gray-300">{new Date(selectedCard.dueDate).toLocaleDateString()}</span>
+                  </div>
+                  <div className="p-3 rounded-lg bg-[#272e36]/50 border border-white/5 col-span-2 sm:col-span-1">
+                    <span className="text-xs text-gray-500 block mb-1">Last Activity</span>
+                    <span className="text-gray-300 text-xs block">
+                      {(() => {
+                        const isUpdated = selectedCard.updatedAt && new Date(selectedCard.updatedAt).getTime() - new Date(selectedCard.createdAt).getTime() > 1000;
+                        const dateObj = isUpdated ? selectedCard.updatedAt : selectedCard.createdAt;
+                        const { relative, formattedDate } = getRelativeTimeString(dateObj);
+                        return (
+                          <>
+                            <span className="font-medium text-gray-200">{isUpdated ? "Updated " : "Created "} {relative}</span>
+                            <span className="text-xs text-gray-400 block mt-0.5">{formattedDate}</span>
+                          </>
+                        );
+                      })()}
+                    </span>
                   </div>
                 </div>
               </div>

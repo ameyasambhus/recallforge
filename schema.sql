@@ -17,6 +17,15 @@ CREATE TABLE users (
   updated_at TIMESTAMPTZ
 );
 
+CREATE TABLE user_settings (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE UNIQUE,
+  easy_bonus NUMERIC DEFAULT 1.3,
+  interval_modifier NUMERIC DEFAULT 1.0,
+  max_interval INTEGER DEFAULT 36500,
+  min_ef NUMERIC DEFAULT 1.3
+);
+
 CREATE TABLE review_history (
   id SERIAL PRIMARY KEY,
   user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,

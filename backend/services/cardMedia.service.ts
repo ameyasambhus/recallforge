@@ -281,6 +281,18 @@ export const cardMediaService = {
     }
   },
 
+  async associateMediaWithCard(cardId: string | number, uploadedFiles: any[]) {
+    return await cardMediaModel.createMany(
+      uploadedFiles.map((file) => ({
+        card_id: cardId,
+        url: file.url,
+        media_type: file.media_type,
+        file_name: file.file_name,
+        size_bytes: file.size_bytes,
+      }))
+    );
+  },
+
   async deleteFromCard(userId: string, cardId: string, mediaId: string, requesterEmail?: string) {
     if (!/^\d+$/.test(cardId) || !/^\d+$/.test(mediaId)) {
       throw new Error('Invalid request');

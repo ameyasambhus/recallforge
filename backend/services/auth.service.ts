@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import userModel from '../models/userModel.js';
+import userSettingsModel from '../models/userSettingsModel.js';
 import transporter from '../config/nodemailer.js';
 import dotenv from 'dotenv';
 dotenv.config();
@@ -12,6 +13,7 @@ export const registerService = {
   async registerFunc(name: string, email: string, password: string) {
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = await userModel.create({ name, email, password: hashedPassword });
+    await userSettingsModel.createDefault(user.id);
     return { userId: user.id };
   },
 };

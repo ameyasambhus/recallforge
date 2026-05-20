@@ -1,10 +1,8 @@
 import crypto from 'node:crypto';
 import { Request, Response } from 'express';
 import Razorpay from 'razorpay';
-import pool from '../config/postgres.js';
-import transactionModel from '../models/transactionModel.js';
+import { billingService } from '../services/billing.service.js';
 import {
-  activatePaidPlan,
   getPaidPlanAmount,
   normalisePlan,
   type PlanName,
@@ -47,7 +45,7 @@ export const createRazorpayOrder = async (req: Request, res: Response) => {
       },
     });
 
-    await transactionModel.createPending({
+    await billingService.createPendingTransaction({
       userId,
       razorpayOrderId: order.id,
       plan: requestedPlan,
@@ -94,7 +92,7 @@ export const verifyRazorpayPayment = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'Invalid payment signature' });
     }
 
-    const transaction = await transactionModel.findByOrderId(razorpay_order_id);
+    const transaction = await billingService.findTransactionByOrderId(razorpay_order_id);
     if (!transaction) {
       return res.status(404).json({ success: false, error: 'Transaction order not found' });
     }
@@ -105,27 +103,11 @@ export const verifyRazorpayPayment = async (req: Request, res: Response) => {
 
     const plan = normalisePlan(transaction.plan);
     if (!isPaidPlan(plan)) {
-      await transactionModel.markFailed(razorpay_order_id, razorpay_payment_id);
+      await billingService.markTransactionFailed(razorpay_order_id, razorpay_payment_id);
       return res.status(400).json({ success: false, error: 'Invalid plan' });
     }
 
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      await activatePaidPlan(transaction.user_id, plan, client);
-      await client.query(
-        `UPDATE transactions
-         SET status = 'success', razorpay_payment_id = COALESCE($1, razorpay_payment_id)
-         WHERE razorpay_order_id = $2`,
-        [razorpay_payment_id, razorpay_order_id]
-      );
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+    await billingService.fulfillOrder(razorpay_order_id, razorpay_payment_id, transaction.user_id, plan);
 
     return res.status(200).json({ success: true, message: 'Plan activated successfully' });
   } catch (error) {
@@ -182,7 +164,7 @@ export const handleRazorpayWebhook = async (req: Request, res: Response) => {
     }
 
     if (eventType === 'payment.failed') {
-      await transactionModel.markFailed(orderId, paymentId);
+      await billingService.markTransactionFailed(orderId, paymentId);
       return res.status(200).json({ success: true, received: true });
     }
 
@@ -192,7 +174,7 @@ export const handleRazorpayWebhook = async (req: Request, res: Response) => {
       return res.status(200).json({ success: true, received: true });
     }
 
-    const transaction = await transactionModel.findByOrderId(orderId);
+    const transaction = await billingService.findTransactionByOrderId(orderId);
     if (!transaction) {
       return res.status(200).json({ success: true, received: true });
     }
@@ -203,27 +185,11 @@ export const handleRazorpayWebhook = async (req: Request, res: Response) => {
 
     const plan = normalisePlan(transaction.plan);
     if (!isPaidPlan(plan)) {
-      await transactionModel.markFailed(orderId, paymentId);
+      await billingService.markTransactionFailed(orderId, paymentId);
       return res.status(200).json({ success: true, received: true });
     }
 
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      await activatePaidPlan(transaction.user_id, plan, client);
-      await client.query(
-        `UPDATE transactions
-         SET status = 'success', razorpay_payment_id = COALESCE($1, razorpay_payment_id)
-         WHERE razorpay_order_id = $2`,
-        [paymentId, orderId]
-      );
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+    await billingService.fulfillOrder(orderId, paymentId, transaction.user_id, plan);
 
     return res.status(200).json({ success: true, received: true });
   } catch (error) {
