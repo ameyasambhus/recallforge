@@ -22,8 +22,8 @@ function getUploadConfigByMimeType(mimeType: string): {
   type: 'upload' | 'authenticated';
 } {
   if (mimeType === 'application/pdf') {
-    // Keep PDFs on public upload delivery for simpler rendering/downloading.
-    return { resource_type: 'image', format: 'pdf', type: 'upload' };
+    // Deliver PDFs via authenticated delivery for security.
+    return { resource_type: 'image', format: 'pdf', type: 'authenticated' };
   }
   if (mimeType.startsWith('image/')) return { resource_type: 'image', type: 'authenticated' };
   if (mimeType.startsWith('video/')) return { resource_type: 'video', type: 'authenticated' };

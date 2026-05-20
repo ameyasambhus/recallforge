@@ -1,10 +1,9 @@
-import React, { useContext, useEffect } from "react";
+import React, { useContext, useEffect, useState, useRef } from "react";
 import { AppContent } from "../../context/AppContext";
-import { useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import MDEditor from "@uiw/react-md-editor";
-import { FileText, Image as ImageIcon, PlayCircle } from "lucide-react";
+import { FileText, Image as ImageIcon, PlayCircle, Upload } from "lucide-react";
 import { MAX_FILE_SIZE_BYTES, PLAN_LABELS, PLAN_LIMITS } from "../../constants/subscription";
 
 const LOG_STORAGE_KEY = "recallforge_log_draft";
@@ -20,6 +19,9 @@ const Log = () => {
   const [mediaFilePreviews, setMediaFilePreviews] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragCounter, setDragCounter] = useState(0);
+  const fileInputRef = useRef(null);
   const activePlan = userData?.subscription?.plan || "free";
   const aiAnswersLimit =
     userData?.subscription?.aiAnswersLimit ?? PLAN_LIMITS[activePlan].aiAnswers;
@@ -194,8 +196,8 @@ const Log = () => {
     }
   };
 
-  const handleFileSelection = (event) => {
-    const selectedFiles = Array.from(event.target.files || []);
+  const processFiles = (filesList) => {
+    const selectedFiles = Array.from(filesList || []);
     if (!selectedFiles.length) return;
 
     const isValidFile = (file) => {
@@ -209,13 +211,11 @@ const Log = () => {
     const invalidFile = selectedFiles.find((file) => !isValidFile(file));
     if (invalidFile) {
       toast.error("Only image/video/PDF files up to 2 MB are allowed");
-      event.target.value = "";
       return;
     }
 
     if (mediaFilesLimit <= 0) {
       toast.error("Media uploads are available on Pro and Max plans only");
-      event.target.value = "";
       return;
     }
 
@@ -239,7 +239,48 @@ const Log = () => {
 
       return merged;
     });
+  };
+
+  const handleFileSelection = (event) => {
+    processFiles(event.target.files);
     event.target.value = "";
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+  };
+
+  const handleDragEnter = (e) => {
+    e.preventDefault();
+    setDragCounter((prev) => {
+      const next = prev + 1;
+      if (next === 1 && mediaFilesLimit > 0) {
+        setIsDragging(true);
+      }
+      return next;
+    });
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setDragCounter((prev) => {
+      const next = Math.max(0, prev - 1);
+      if (next === 0) {
+        setIsDragging(false);
+      }
+      return next;
+    });
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    setDragCounter(0);
+    if (mediaFilesLimit <= 0) {
+      toast.error("Media uploads are available on Pro and Max plans only");
+      return;
+    }
+    processFiles(e.dataTransfer.files);
   };
 
   const handleRemoveSelectedFile = (fileToRemove) => {
@@ -344,22 +385,64 @@ const Log = () => {
           ))}
         </datalist>
 
-        <div className="rounded-xl border border-gray-600 bg-[#1f262d] p-3">
-          <input
-            type="file"
-            multiple
-            accept="image/*,video/*,application/pdf"
-            onChange={handleFileSelection}
-            disabled={mediaFilesLimit === 0}
-            className="block w-full text-sm text-gray-300 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-600 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-indigo-500"
-          />
-          <p className="text-xs text-gray-400 mt-2">
-            {mediaFilesLimit === 0
-              ? "Attachments are disabled on Free plan. Upgrade to Pro/Max."
-              : `Up to ${mediaFilesLimit} file(s) on ${PLAN_LABELS[activePlan]} plan. Max 2 MB each.`}
-          </p>
+        <div
+          onDragOver={handleDragOver}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={`relative rounded-xl border border-dashed p-4 transition-all duration-300 ${
+            isDragging
+              ? "border-indigo-500 bg-indigo-950/40 shadow-[0_0_20px_rgba(99,102,241,0.2)] scale-[1.01]"
+              : "border-gray-600 bg-[#1f262d] hover:border-gray-500"
+          }`}
+        >
+          {isDragging && (
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#1f262d]/95 rounded-xl backdrop-blur-sm animate-fadeIn">
+              <div className="absolute inset-0 bg-indigo-500/5 rounded-xl animate-pulse-glow" />
+              <div className="relative z-10 flex flex-col items-center gap-2">
+                <div className="w-12 h-12 rounded-full bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 animate-float shadow-[0_0_15px_rgba(99,102,241,0.3)]">
+                  <Upload className="w-6 h-6" />
+                </div>
+                <span className="text-sm font-semibold text-white mt-2">Drop your files here</span>
+                <span className="text-xs text-gray-400">Accepts image, video, or PDF up to 2MB</span>
+              </div>
+            </div>
+          )}
+
+          <div
+            className={`flex flex-col items-center justify-center py-4 cursor-pointer group ${
+              mediaFilesLimit === 0 ? "opacity-50 cursor-not-allowed" : ""
+            }`}
+            onClick={() => {
+              if (mediaFilesLimit > 0) {
+                fileInputRef.current?.click();
+              }
+            }}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/*,video/*,application/pdf"
+              onChange={handleFileSelection}
+              disabled={mediaFilesLimit === 0}
+              className="hidden"
+            />
+            <div className="w-10 h-10 rounded-full bg-[#272e36] border border-white/5 flex items-center justify-center text-gray-400 group-hover:text-indigo-400 group-hover:bg-indigo-600/10 group-hover:border-indigo-500/30 transition-all duration-300">
+              <Upload className="w-5 h-5" />
+            </div>
+            <p className="text-sm font-medium text-gray-300 mt-2 text-center">
+              <span className="text-indigo-400 hover:text-indigo-300 font-semibold underline">Click to upload</span> or drag and drop
+            </p>
+            <p className="text-xs text-gray-500 mt-1 text-center">
+              {mediaFilesLimit === 0
+                ? "Attachments are disabled on Free plan. Upgrade to Pro/Max."
+                : `Up to ${mediaFilesLimit} file(s) on ${PLAN_LABELS[activePlan]} plan. Max 2 MB each.`}
+            </p>
+          </div>
+
           {!!mediaFilePreviews.length && (
-            <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2" onClick={(e) => e.stopPropagation()}>
               {mediaFilePreviews.map(({ key, file, previewUrl }) => (
                 <div key={key} className="relative rounded-md border border-white/10 bg-[#202733] overflow-hidden">
                   {file.type.startsWith("image/") && previewUrl && (

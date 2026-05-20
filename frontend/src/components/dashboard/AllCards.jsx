@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState } from "react";
+import React, { useContext, useEffect, useState, useRef } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { ChevronLeft, ChevronRight, Trash2, Calendar, Folder, Search, ArrowUpDown, X, Edit2, ListPlus, Upload, FileText, PlayCircle, Image as ImageIcon, Download, Clock } from "lucide-react";
@@ -112,6 +112,9 @@ const AllCards = () => {
   const [editMediaBusy, setEditMediaBusy] = useState(false);
   const [editUploadProgress, setEditUploadProgress] = useState(0);
   const [editNewFilePreviews, setEditNewFilePreviews] = useState([]);
+  const [isEditDragging, setIsEditDragging] = useState(false);
+  const [editDragCounter, setEditDragCounter] = useState(0);
+  const editFileInputRef = useRef(null);
 
   // Add to List State
   const [showAddToListModal, setShowAddToListModal] = useState(false);
@@ -335,8 +338,8 @@ const AllCards = () => {
     fetchEditMedia();
   }, [showEditModal, editingCard?._id]);
 
-  const handleEditFileSelection = (event) => {
-    const selectedFiles = Array.from(event.target.files || []);
+  const processEditFiles = (filesList) => {
+    const selectedFiles = Array.from(filesList || []);
     if (!selectedFiles.length) return;
 
     const isValidFile = (file) => {
@@ -350,14 +353,12 @@ const AllCards = () => {
     const invalidFile = selectedFiles.find((file) => !isValidFile(file));
     if (invalidFile) {
       toast.error("Only image/video/PDF files up to 2 MB are allowed");
-      event.target.value = "";
       return;
     }
 
     const maxAllowed = mediaFilesLimit - editMedia.length;
     if (maxAllowed <= 0) {
       toast.error(`Your ${PLAN_LABELS[activePlan]} plan allows maximum ${mediaFilesLimit} attachment(s) per card`);
-      event.target.value = "";
       return;
     }
 
@@ -377,7 +378,58 @@ const AllCards = () => {
       }
       return merged.slice(0, maxAllowed);
     });
+  };
+
+  const handleEditFileSelection = (event) => {
+    processEditFiles(event.target.files);
     event.target.value = "";
+  };
+
+  const handleEditDragOver = (e) => {
+    e.preventDefault();
+  };
+
+  const handleEditDragEnter = (e) => {
+    e.preventDefault();
+    setEditDragCounter((prev) => {
+      const next = prev + 1;
+      const maxAllowed = mediaFilesLimit - editMedia.length;
+      if (next === 1 && maxAllowed > 0 && !editMediaBusy && mediaFilesLimit > 0) {
+        setIsEditDragging(true);
+      }
+      return next;
+    });
+  };
+
+  const handleEditDragLeave = (e) => {
+    e.preventDefault();
+    setEditDragCounter((prev) => {
+      const next = Math.max(0, prev - 1);
+      if (next === 0) {
+        setIsEditDragging(false);
+      }
+      return next;
+    });
+  };
+
+  const handleEditDrop = (e) => {
+    e.preventDefault();
+    setIsEditDragging(false);
+    setEditDragCounter(0);
+    
+    if (mediaFilesLimit <= 0) {
+      toast.error("Attachments are disabled on Free plan.");
+      return;
+    }
+    if (editMediaBusy) {
+      return;
+    }
+    const maxAllowed = mediaFilesLimit - editMedia.length;
+    if (maxAllowed <= 0) {
+      toast.error(`Your ${PLAN_LABELS[activePlan]} plan allows maximum ${mediaFilesLimit} attachment(s) per card`);
+      return;
+    }
+    processEditFiles(e.dataTransfer.files);
   };
 
   useEffect(() => {
@@ -1065,22 +1117,64 @@ const AllCards = () => {
                     <p className="text-xs text-gray-500">No attachments</p>
                   )}
 
-                  <div className="space-y-2">
-                    <input
-                      type="file"
-                      multiple
-                      accept="image/*,video/*,application/pdf"
-                      onChange={handleEditFileSelection}
-                      disabled={editMedia.length >= mediaFilesLimit || editMediaBusy || mediaFilesLimit === 0}
-                      className="block w-full text-sm text-gray-300 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-600 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-indigo-500 disabled:opacity-50"
-                    />
-                    <p className="text-xs text-gray-400">
-                      {mediaFilesLimit === 0
-                        ? "Attachments are disabled on Free plan."
-                        : `Max ${mediaFilesLimit} file(s) per card on ${PLAN_LABELS[activePlan]} plan. 2 MB per file.`}
-                    </p>
+                  <div
+                    onDragOver={handleEditDragOver}
+                    onDragEnter={handleEditDragEnter}
+                    onDragLeave={handleEditDragLeave}
+                    onDrop={handleEditDrop}
+                    className={`relative rounded-xl border border-dashed p-4 transition-all duration-300 ${
+                      isEditDragging
+                        ? "border-indigo-500 bg-indigo-950/40 shadow-[0_0_20px_rgba(99,102,241,0.2)] scale-[1.01]"
+                        : "border-white/10 bg-[#1f262d] hover:border-white/20"
+                    }`}
+                  >
+                    {isEditDragging && (
+                      <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#1f262d]/95 rounded-xl backdrop-blur-sm animate-fadeIn">
+                        <div className="absolute inset-0 bg-indigo-500/5 rounded-xl animate-pulse-glow" />
+                        <div className="relative z-10 flex flex-col items-center gap-2">
+                          <div className="w-12 h-12 rounded-full bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 animate-float shadow-[0_0_15px_rgba(99,102,241,0.3)]">
+                            <Upload className="w-6 h-6" />
+                          </div>
+                          <span className="text-sm font-semibold text-white mt-2">Drop your files here</span>
+                          <span className="text-xs text-gray-400">Accepts image, video, or PDF up to 2MB</span>
+                        </div>
+                      </div>
+                    )}
+
+                    <div
+                      className={`flex flex-col items-center justify-center py-4 cursor-pointer group ${
+                        (editMedia.length >= mediaFilesLimit || editMediaBusy || mediaFilesLimit === 0) ? "opacity-50 cursor-not-allowed" : ""
+                      }`}
+                      onClick={() => {
+                        if (!(editMedia.length >= mediaFilesLimit || editMediaBusy || mediaFilesLimit === 0)) {
+                          editFileInputRef.current?.click();
+                        }
+                      }}
+                    >
+                      <input
+                        ref={editFileInputRef}
+                        type="file"
+                        multiple
+                        accept="image/*,video/*,application/pdf"
+                        onChange={handleEditFileSelection}
+                        disabled={editMedia.length >= mediaFilesLimit || editMediaBusy || mediaFilesLimit === 0}
+                        className="hidden"
+                      />
+                      <div className="w-10 h-10 rounded-full bg-[#272e36] border border-white/5 flex items-center justify-center text-gray-400 group-hover:text-indigo-400 group-hover:bg-indigo-600/10 group-hover:border-indigo-500/30 transition-all duration-300">
+                        <Upload className="w-5 h-5" />
+                      </div>
+                      <p className="text-sm font-medium text-gray-300 mt-2 text-center">
+                        <span className="text-indigo-400 hover:text-indigo-300 font-semibold underline">Click to upload</span> or drag and drop
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1 text-center">
+                        {mediaFilesLimit === 0
+                          ? "Attachments are disabled on Free plan."
+                          : `Max ${mediaFilesLimit} file(s) per card on ${PLAN_LABELS[activePlan]} plan. 2 MB per file.`}
+                      </p>
+                    </div>
+
                     {!!editNewFilePreviews.length && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2" onClick={(e) => e.stopPropagation()}>
                         {editNewFilePreviews.map(({ key, file, previewUrl }) => (
                           <div key={key} className="rounded-md border border-white/10 bg-[#1f262d] overflow-hidden">
                             {file.type.startsWith("image/") && previewUrl && (
@@ -1108,26 +1202,28 @@ const AllCards = () => {
                         ))}
                       </div>
                     )}
-                    <button
-                      type="button"
-                      onClick={handleUploadEditMedia}
-                      disabled={!editNewFiles.length || editMediaBusy}
-                      className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm disabled:opacity-50"
-                    >
-                      <Upload className="w-4 h-4" />
-                      {editMediaBusy ? "Uploading..." : "Upload Selected Files"}
-                    </button>
-                    {editMediaBusy && editUploadProgress > 0 && (
-                      <div className="rounded-lg border border-indigo-500/30 bg-indigo-600/10 p-2.5">
-                        <div className="flex justify-between text-xs text-indigo-200 mb-1">
-                          <span>Uploading attachments...</span>
-                          <span>{editUploadProgress}%</span>
+                    <div className="mt-4 flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={handleUploadEditMedia}
+                        disabled={!editNewFiles.length || editMediaBusy}
+                        className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm disabled:opacity-50"
+                      >
+                        <Upload className="w-4 h-4" />
+                        {editMediaBusy ? "Uploading..." : "Upload Selected Files"}
+                      </button>
+                      {editMediaBusy && editUploadProgress > 0 && (
+                        <div className="rounded-lg border border-indigo-500/30 bg-indigo-600/10 p-2.5">
+                          <div className="flex justify-between text-xs text-indigo-200 mb-1">
+                            <span>Uploading attachments...</span>
+                            <span>{editUploadProgress}%</span>
+                          </div>
+                          <div className="h-2 rounded-full bg-[#1f262d] overflow-hidden">
+                            <div className="h-full bg-indigo-500 transition-all duration-200" style={{ width: `${editUploadProgress}%` }} />
+                          </div>
                         </div>
-                        <div className="h-2 rounded-full bg-[#1f262d] overflow-hidden">
-                          <div className="h-full bg-indigo-500 transition-all duration-200" style={{ width: `${editUploadProgress}%` }} />
-                        </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
 
