@@ -139,6 +139,21 @@ const AuthPage = () => {
         navigate("/app/log");
       } else {
         toast.error(data.message);
+        if (data.isNotVerified) {
+          setTab("signup");
+          setOtpSent(true);
+          try {
+            const otpResponse = await axios.post("/api/auth/send-verify-otp", { email });
+            if (otpResponse.data.success) {
+              toast.success("A new verification OTP has been sent to your email.");
+            } else {
+              toast.error(otpResponse.data.message);
+            }
+          } catch (otpError) {
+            console.error("Error sending auto-OTP for unverified login:", otpError);
+            toast.error("Failed to send OTP automatically. Please request it manually or try registering again.");
+          }
+        }
         window.grecaptcha?.reset();
       }
     } catch (error) {

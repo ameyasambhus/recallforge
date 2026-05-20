@@ -43,6 +43,14 @@ export const login = async (req: Request, res: Response) => {
     if (!isMatch) {
       return res.json({ success: false, message: 'Invalid credentials' });
     }
+    if (!user.is_account_verified) {
+      return res.json({
+        success: false,
+        isNotVerified: true,
+        email: user.email,
+        message: 'Account is not verified. Please verify your email first.',
+      });
+    }
     const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET as string, {
       expiresIn: '7d',
     });

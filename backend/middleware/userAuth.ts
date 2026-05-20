@@ -17,6 +17,9 @@ const userAuth = async (req: Request, res: Response, next: NextFunction) => {
       if (!user) {
         return res.json({ success: false, message: 'User not found' });
       }
+      if (!user.is_account_verified) {
+        return res.json({ success: false, message: 'Account is not verified. Please verify your email.' });
+      }
       const refreshed = await refreshExpiredPlanForUser(user.id);
       user.plan = refreshed.plan;
       user.plan_expires_at = refreshed.plan_expires_at;
