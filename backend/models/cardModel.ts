@@ -268,12 +268,25 @@ const cardModel = {
       `SELECT c.id, c.mongo_id, c.user_id, c.folder_id, c.question, c.answer,
               c.ef, c.interval, c.repetitions, c.due_date, c.created_at, c.updated_at,
               f.name AS folder,
-              1 - (c.embedding <=> $1::vector) AS similarity
+              GREATEST(
+                1 - (c.embedding <=> $1::vector),
+                COALESCE(cm.media_similarity, -1)
+              ) AS similarity
        FROM cards c
        LEFT JOIN folders f ON c.folder_id = f.id
+       LEFT JOIN LATERAL (
+         SELECT MAX(1 - (cm.text_embedding <=> $1::vector)) AS media_similarity
+         FROM card_media cm
+         WHERE cm.card_id = c.id
+           AND cm.ocr_status = 'done'
+           AND cm.text_embedding IS NOT NULL
+       ) cm ON true
        WHERE c.user_id = $2
          AND c.embedding IS NOT NULL
-         AND 1 - (c.embedding <=> $1::vector) > $3
+         AND GREATEST(
+           1 - (c.embedding <=> $1::vector),
+           COALESCE(cm.media_similarity, -1)
+         ) > $3
        ORDER BY similarity DESC
        LIMIT $4`,
       [opts.embedding, opts.userId, opts.minSimilarity, opts.limit]
@@ -297,7 +310,17 @@ const cardModel = {
        FROM cards c
        LEFT JOIN folders f ON c.folder_id = f.id
        WHERE c.user_id = $1
-         AND (c.question ILIKE $2 OR c.answer ILIKE $2)
+         AND (
+           c.question ILIKE $2
+           OR c.answer ILIKE $2
+           OR EXISTS (
+             SELECT 1
+             FROM card_media cm
+             WHERE cm.card_id = c.id
+               AND cm.ocr_status = 'done'
+               AND cm.extracted_text ILIKE $2
+           )
+         )
        ORDER BY c.updated_at DESC
        LIMIT $3`,
       [opts.userId, `%${opts.query}%`, opts.limit]

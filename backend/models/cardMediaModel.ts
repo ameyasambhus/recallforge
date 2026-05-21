@@ -2,6 +2,7 @@ import pool from '../config/postgres.js';
 
 export type ModerationStatus = 'pending' | 'approved' | 'rejected';
 export type AwsModerationStatus = ModerationStatus | 'not_used';
+export type OcrStatus = 'pending' | 'processing' | 'done' | 'failed' | 'skipped';
 
 export interface CardMedia {
   id: number;
@@ -13,6 +14,9 @@ export interface CardMedia {
   cloudinary_public_id: string | null;
   moderation_status: ModerationStatus;
   aws_moderation_status: AwsModerationStatus;
+  extracted_text?: string | null;
+  text_embedding?: string | null;
+  ocr_status?: OcrStatus | null;
   created_at: Date;
 }
 
@@ -105,6 +109,46 @@ const cardMediaModel = {
       [data.moderation_status, data.aws_moderation_status, mediaId]
     );
     return result.rows[0] ?? null;
+  },
+
+  async updateOcrStatus(mediaId: string | number, status: OcrStatus): Promise<void> {
+    await pool.query(
+      `UPDATE card_media
+       SET ocr_status = $1
+       WHERE id = $2`,
+      [status, mediaId]
+    );
+  },
+
+  async updateOcrResult(
+    mediaId: string | number,
+    data: { extracted_text: string; text_embedding: string }
+  ): Promise<void> {
+    await pool.query(
+      `UPDATE card_media
+       SET extracted_text = $1,
+           text_embedding = $2::vector,
+           ocr_status = 'done'
+       WHERE id = $3`,
+      [data.extracted_text, data.text_embedding, mediaId]
+    );
+  },
+
+  async findOcrStatusesByCardId(
+    cardId: string | number
+  ): Promise<Array<{ id: number; media_type: CardMedia['media_type']; ocr_status: OcrStatus | null }>> {
+    const result = await pool.query<{
+      id: number;
+      media_type: CardMedia['media_type'];
+      ocr_status: OcrStatus | null;
+    }>(
+      `SELECT id, media_type, ocr_status
+       FROM card_media
+       WHERE card_id = $1
+       ORDER BY created_at ASC`,
+      [cardId]
+    );
+    return result.rows;
   },
 };
 

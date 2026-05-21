@@ -174,6 +174,14 @@ function buildProtectedDownloadUrl(cardId: string, mediaId: string | number): st
   return `/api/card/${cardId}/media/${mediaId}/download`;
 }
 
+function stripOcrFields(item: CardMedia) {
+  const { extracted_text: _text, text_embedding: _embedding, ...safeItem } = item as CardMedia & {
+    extracted_text?: string | null;
+    text_embedding?: string | null;
+  };
+  return safeItem;
+}
+
 async function deleteFromCloudinaryByPublicId(
   publicId: string,
   resourceType: 'image' | 'video' | 'raw',
@@ -241,7 +249,7 @@ export const cardMediaService = {
 
     const media = await cardMediaModel.findByCardId(cardId);
     return media.map((item) => ({
-      ...item,
+      ...stripOcrFields(item),
       moderation_status: getEffectiveModerationStatus(item.moderation_status),
       aws_moderation_status: item.aws_moderation_status ?? 'not_used',
       url: buildProtectedMediaUrl(cardId, item.id),
@@ -291,9 +299,19 @@ export const cardMediaService = {
 
     const createdMedia = await cardMediaModel.createMany(uploads);
     return createdMedia.map((item) => ({
-      ...item,
+      ...stripOcrFields(item),
       url: buildProtectedMediaUrl(cardId, item.id),
     }));
+  },
+
+  async getOcrStatusesForCard(userId: string, cardId: string, requesterEmail?: string) {
+    if (!/^[0-9]+$/.test(cardId)) {
+      throw new Error('Invalid card ID');
+    }
+
+    await assertCardMediaAccess(userId, cardId, requesterEmail);
+
+    return cardMediaModel.findOcrStatusesByCardId(cardId);
   },
 
   async uploadFiles(files: Express.Multer.File[]) {

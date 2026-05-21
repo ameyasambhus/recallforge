@@ -339,23 +339,33 @@ export const cardService = {
       return [];
     }
 
+    const keywordResults = await cardModel.searchByKeyword({
+      userId,
+      query: trimmed,
+      limit: 10,
+    });
+
     if (trimmed.length < 4) {
-      return cardModel.searchByKeyword({
-        userId,
-        query: trimmed,
-        limit: 10,
-      });
+      return keywordResults;
     }
 
     const embeddingValues = await generateEmbedding(formatSearchInput(trimmed));
     const embedding = toVectorLiteral(embeddingValues);
 
-    return cardModel.searchByEmbedding({
+    const embeddingResults = await cardModel.searchByEmbedding({
       userId,
       embedding,
       minSimilarity: 0.65,
       limit: 10,
     });
+
+    const merged = new Map<string, any>();
+    for (const card of embeddingResults) merged.set(String(card.id), card);
+    for (const card of keywordResults) {
+      if (!merged.has(String(card.id))) merged.set(String(card.id), card);
+    }
+
+    return Array.from(merged.values()).slice(0, 10);
   },
 };
 

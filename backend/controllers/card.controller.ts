@@ -8,6 +8,8 @@ import {
 } from '../services/card.service.js';
 import { cardMediaService } from '../services/cardMedia.service.js';
 import { folderService } from '../services/folder.service.js';
+import { extractTextFromMedia } from '../utils/ocr.js';
+import cardMediaModel from '../models/cardMediaModel.js';
 import {
   assertMediaUploadAllowed,
   consumeAiUsageOrThrow,
@@ -30,12 +32,25 @@ export const createCard = async (req: Request, res: Response) => {
     );
     createdCard = card;
 
+    let createdMedia: Array<{ id: number; url: string; media_type: string }> = [];
     if (files.length) {
       const uploadedFiles = await cardMediaService.uploadFiles(files);
-      await cardMediaService.associateMediaWithCard(card.id, uploadedFiles);
+      createdMedia = await cardMediaService.associateMediaWithCard(card.id, uploadedFiles);
     }
 
     res.status(201).json({ success: true, card });
+
+    if (createdMedia.length) {
+      void (async () => {
+        try {
+          await Promise.all(
+            createdMedia.map((item) => extractTextFromMedia(item.id, item.url, item.media_type))
+          );
+        } catch (error) {
+          console.error('Failed to start OCR jobs after card create:', error);
+        }
+      })();
+    }
   } catch (err) {
     if (createdCard?.id) {
       try {
@@ -314,6 +329,20 @@ export const uploadCardMedia = async (req: Request, res: Response) => {
       req.user?.email
     );
     res.status(201).json({ success: true, media });
+
+    void (async () => {
+      try {
+        await Promise.all(
+          media.map(async (item) => {
+            const raw = await cardMediaModel.findOneById(item.id);
+            if (!raw) return;
+            await extractTextFromMedia(raw.id, raw.url, raw.media_type);
+          })
+        );
+      } catch (error) {
+        console.error('Failed to start OCR jobs:', error);
+      }
+    })();
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : 'An error occurred';
     const statusCode =
@@ -323,6 +352,26 @@ export const uploadCardMedia = async (req: Request, res: Response) => {
           ? 403
           : errorMessage.toLowerCase().includes('plan')
             ? 403
+          : 400;
+    res.status(statusCode).json({ success: false, error: errorMessage });
+  }
+};
+
+export const getCardMediaOcrStatus = async (req: Request, res: Response) => {
+  try {
+    const statuses = await cardMediaService.getOcrStatusesForCard(
+      String(req.user.id),
+      req.params.id,
+      req.user?.email
+    );
+    res.json({ success: true, media: statuses });
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : 'An error occurred';
+    const statusCode =
+      errorMessage === 'Card not found'
+        ? 404
+        : errorMessage === 'Forbidden'
+          ? 403
           : 400;
     res.status(statusCode).json({ success: false, error: errorMessage });
   }

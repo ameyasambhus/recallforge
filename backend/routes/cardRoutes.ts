@@ -13,6 +13,7 @@ import {
   updateCard,
   uploadCardMedia,
   getCardMedia,
+  getCardMediaOcrStatus,
   deleteCardMedia,
   viewCardMedia,
   downloadCardMedia,
@@ -28,6 +29,7 @@ cardRouter.post("/cards/check-duplicate", userAuth, checkDuplicate);
 cardRouter.get("/cards/search", userAuth, searchCards);
 cardRouter.post("/:id/media", userAuth, mediaRateLimiter, mediaUploadParser, uploadCardMedia);
 cardRouter.get("/:id/media", userAuth, getCardMedia);
+cardRouter.get("/:id/media/ocr-status", userAuth, getCardMediaOcrStatus);
 cardRouter.get("/:id/media/:mediaId/view", userAuth, viewCardMedia);
 cardRouter.get("/:id/media/:mediaId/download", userAuth, downloadCardMedia);
 cardRouter.delete("/:id/media/:mediaId", userAuth, deleteCardMedia);
