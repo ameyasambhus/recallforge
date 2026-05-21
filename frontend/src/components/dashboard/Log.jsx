@@ -20,6 +20,9 @@ const Log = () => {
   const [mediaFilePreviews, setMediaFilePreviews] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [duplicateMatches, setDuplicateMatches] = useState([]);
+  const [duplicateWarningDismissed, setDuplicateWarningDismissed] = useState(false);
+  const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragCounter, setDragCounter] = useState(0);
   const fileInputRef = useRef(null);
@@ -68,6 +71,48 @@ const Log = () => {
     const dataToSave = { question, answer, folder };
     localStorage.setItem(LOG_STORAGE_KEY, JSON.stringify(dataToSave));
   }, [question, answer, folder]);
+
+  useEffect(() => {
+    setDuplicateWarningDismissed(false);
+  }, [question, answer]);
+
+  useEffect(() => {
+    const trimmedQuestion = question.trim();
+    const trimmedAnswer = answer.trim();
+
+    if (trimmedQuestion.length < 10 && trimmedAnswer.length < 10) {
+      setDuplicateMatches([]);
+      setIsCheckingDuplicate(false);
+      return;
+    }
+
+    let didCancel = false;
+    const timer = setTimeout(async () => {
+      try {
+        setIsCheckingDuplicate(true);
+        const { data } = await axios.post("/api/card/cards/check-duplicate", {
+          question: trimmedQuestion,
+          answer: trimmedAnswer,
+        });
+        if (!didCancel) {
+          setDuplicateMatches(data.matches || []);
+        }
+      } catch (error) {
+        if (!didCancel) {
+          setDuplicateMatches([]);
+        }
+      } finally {
+        if (!didCancel) {
+          setIsCheckingDuplicate(false);
+        }
+      }
+    }, 800);
+
+    return () => {
+      didCancel = true;
+      clearTimeout(timer);
+    };
+  }, [question, answer]);
 
   const generateAnswer = async () => {
     if (!question.trim()) {
@@ -513,6 +558,33 @@ const Log = () => {
           >
             {isSubmitting ? "Uploading..." : "Add Card"}
           </button>
+
+          {!duplicateWarningDismissed && duplicateMatches.length > 0 && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-amber-100">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold">Similar cards found</p>
+                  <ul className="mt-2 space-y-1 text-xs text-amber-200">
+                    {duplicateMatches.map((match, index) => (
+                      <li key={`${match.question}-${index}`}>
+                        {match.question}
+                      </li>
+                    ))}
+                  </ul>
+                  {isCheckingDuplicate && (
+                    <p className="mt-2 text-[11px] text-amber-300">Checking for duplicates...</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDuplicateWarningDismissed(true)}
+                  className="text-xs text-amber-200 hover:text-white"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
 
           {isSubmitting && (
             <div className="rounded-xl border border-indigo-500/30 bg-indigo-600/10 p-3">

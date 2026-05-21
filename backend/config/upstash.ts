@@ -11,10 +11,10 @@ dotenv.config({ path: path.join(__dirname, '..', '.env') });
 // Create a single Redis client instance using Upstash
 export const redis = Redis.fromEnv();
 
-//rate limiter - max 10 requests per 20 seconds allowed
+//rate limiter - max 100 requests per 20 seconds allowed
 const ratelimit = new Ratelimit({
   redis,
-  limiter: Ratelimit.slidingWindow(10, "20s"),
+  limiter: Ratelimit.slidingWindow(100, "20s"),
 });
 
 export default ratelimit;

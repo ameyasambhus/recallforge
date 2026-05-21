@@ -164,6 +164,15 @@ const AllCards = () => {
     localStorage.setItem("cards_sortOrder", sortOrder);
   }, [sortBy, sortOrder]);
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPage(1);
+      setSearchTerm(searchInput.trim());
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
   const activePlan = userData?.subscription?.plan || "free";
   const mediaFilesLimit =
     userData?.subscription?.mediaFilesLimit ?? PLAN_LIMITS[activePlan].mediaFiles;
@@ -171,25 +180,36 @@ const AllCards = () => {
   const fetchCards = async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get("/api/card/cards", {
-        params: {
-          page,
-          limit,
-          folder: selectedFolder === "All" ? undefined : selectedFolder,
-          search: searchTerm || undefined,
-          sortBy,
-          sortOrder
+      if (searchTerm) {
+        const { data } = await axios.get("/api/card/cards/search", {
+          params: { q: searchTerm }
+        });
+
+        const results = data.cards || [];
+        setCards(results);
+        setTotalPages(1);
+        setTotalCards(results.length);
+      } else {
+        const { data } = await axios.get("/api/card/cards", {
+          params: {
+            page,
+            limit,
+            folder: selectedFolder === "All" ? undefined : selectedFolder,
+            search: searchTerm || undefined,
+            sortBy,
+            sortOrder
+          }
+        });
+
+        // Handle pagination response
+        setCards(data.cards || []);
+        setTotalPages(data.totalPages || 1);
+        setAvailableFolders(data.folders || ["All"]);
+        setTotalCards(data.totalCards || 0);
+
+        if (page > (data.totalPages || 1) && (data.totalPages || 0) > 0) {
+          setPage(data.totalPages);
         }
-      });
-
-      // Handle pagination response
-      setCards(data.cards || []);
-      setTotalPages(data.totalPages || 1);
-      setAvailableFolders(data.folders || ["All"]);
-      setTotalCards(data.totalCards || 0);
-
-      if (page > (data.totalPages || 1) && (data.totalPages || 0) > 0) {
-        setPage(data.totalPages);
       }
     } catch (err) {
       if (err.response?.status !== 404) {
@@ -249,7 +269,7 @@ const AllCards = () => {
   };
 
   const handleSearchClick = () => {
-    setSearchTerm(searchInput);
+    setSearchTerm(searchInput.trim());
     setPage(1);
   };
 
@@ -740,8 +760,18 @@ const AllCards = () => {
                           className="w-4 h-4 rounded border-white/10 text-indigo-600 focus:ring-indigo-500/20 bg-gray-900 cursor-pointer"
                         />
                       </td>
-                      <td className="px-6 py-4 font-medium text-white max-w-[300px] md:max-w-[400px] truncate" title={card.question}>
-                        {card.question}
+                      <td className="px-6 py-4 font-medium text-white max-w-[300px] md:max-w-[400px]" title={card.question}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="truncate">{card.question}</span>
+                          {typeof card.similarity === "number" && (
+                            <span
+                              className="shrink-0 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200"
+                              title="Semantic similarity"
+                            >
+                              {Math.round(card.similarity * 100)}%
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-indigo-600/10 text-indigo-400 border border-indigo-600/20 whitespace-nowrap">

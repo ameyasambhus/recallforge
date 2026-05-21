@@ -20,8 +20,9 @@ export interface Card {
 
 /** Map a raw pg row to the camelCase shape the frontend expects */
 function normaliseCard(row: Card & Record<string, any>) {
+  const { embedding: _embedding, ...safeRow } = row;
   return {
-    ...row,
+    ...safeRow,
     _id: row.id,           // frontend uses card._id for delete/edit URLs
     dueDate: row.due_date,
     createdAt: row.created_at,
@@ -44,17 +45,20 @@ const cardModel = {
     question: string;
     answer: string;
     folder?: string;
+    embedding?: string | null;
   }): Promise<Card> {
     const folderId = await this.resolveFolderId(data.user_id, data.folder);
     const now = new Date();
     const dueDate = new Date();
     dueDate.setHours(0, 0, 0, 0);
 
+    const embeddingValue = data.embedding ?? null;
+
     const result = await pool.query<Card>(
-      `INSERT INTO cards (mongo_id, user_id, folder_id, question, answer, ef, interval, repetitions, due_date, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, 2.5, 1, 0, $6, $7, $7)
+      `INSERT INTO cards (mongo_id, user_id, folder_id, question, answer, ef, interval, repetitions, due_date, created_at, updated_at, embedding)
+       VALUES ($1, $2, $3, $4, $5, 2.5, 1, 0, $6, $7, $7, $8::vector)
        RETURNING *`,
-      [crypto.randomUUID(), data.user_id, folderId, data.question, data.answer, dueDate, now]
+      [crypto.randomUUID(), data.user_id, folderId, data.question, data.answer, dueDate, now, embeddingValue]
     );
 
     const card = result.rows[0];
@@ -86,7 +90,16 @@ const cardModel = {
 
   async findAndUpdate(
     where: { id: number | string; user_id: number | string },
-    data: Partial<{ question: string; answer: string; folder: string; ef: number; interval: number; repetitions: number; due_date: Date }>
+    data: Partial<{
+      question: string;
+      answer: string;
+      folder: string;
+      ef: number;
+      interval: number;
+      repetitions: number;
+      due_date: Date;
+      embedding: string | null;
+    }>
   ): Promise<Card | null> {
     const updateData: Record<string, any> = { ...data };
 
@@ -103,6 +116,11 @@ const cardModel = {
     let idx = 1;
 
     for (const [key, value] of Object.entries(updateData)) {
+      if (key === 'embedding') {
+        updates.push(`${key} = $${idx++}::vector`);
+        values.push(value);
+        continue;
+      }
       updates.push(`${key} = $${idx++}`);
       values.push(value);
     }
@@ -215,6 +233,77 @@ const cardModel = {
 
   async deleteByUser(userId: number | string): Promise<void> {
     await pool.query('DELETE FROM cards WHERE user_id = $1', [userId]);
+  },
+
+  async findDuplicatesByEmbedding(opts: {
+    userId: number | string;
+    embedding: string;
+    minSimilarity: number;
+    limit: number;
+  }): Promise<{ question: string; answer: string; similarity: number }[]> {
+    const result = await pool.query<{ question: string; answer: string; similarity: number }>(
+      `SELECT c.question, c.answer, 1 - (c.embedding <=> $1::vector) AS similarity
+       FROM cards c
+       WHERE c.user_id = $2
+         AND c.embedding IS NOT NULL
+         AND 1 - (c.embedding <=> $1::vector) > $3
+       ORDER BY similarity DESC
+       LIMIT $4`,
+      [opts.embedding, opts.userId, opts.minSimilarity, opts.limit]
+    );
+
+    return result.rows.map((row) => ({
+      ...row,
+      similarity: Number(row.similarity),
+    }));
+  },
+
+  async searchByEmbedding(opts: {
+    userId: number | string;
+    embedding: string;
+    minSimilarity: number;
+    limit: number;
+  }): Promise<Array<Card & { similarity: number }>> {
+    const result = await pool.query<Card & { similarity: number }>(
+      `SELECT c.id, c.mongo_id, c.user_id, c.folder_id, c.question, c.answer,
+              c.ef, c.interval, c.repetitions, c.due_date, c.created_at, c.updated_at,
+              f.name AS folder,
+              1 - (c.embedding <=> $1::vector) AS similarity
+       FROM cards c
+       LEFT JOIN folders f ON c.folder_id = f.id
+       WHERE c.user_id = $2
+         AND c.embedding IS NOT NULL
+         AND 1 - (c.embedding <=> $1::vector) > $3
+       ORDER BY similarity DESC
+       LIMIT $4`,
+      [opts.embedding, opts.userId, opts.minSimilarity, opts.limit]
+    );
+
+    return result.rows.map((row) => ({
+      ...normaliseCard(row),
+      similarity: Number(row.similarity),
+    }));
+  },
+
+  async searchByKeyword(opts: {
+    userId: number | string;
+    query: string;
+    limit: number;
+  }): Promise<Card[]> {
+    const result = await pool.query<Card>(
+      `SELECT c.id, c.mongo_id, c.user_id, c.folder_id, c.question, c.answer,
+              c.ef, c.interval, c.repetitions, c.due_date, c.created_at, c.updated_at,
+              f.name AS folder
+       FROM cards c
+       LEFT JOIN folders f ON c.folder_id = f.id
+       WHERE c.user_id = $1
+         AND (c.question ILIKE $2 OR c.answer ILIKE $2)
+       ORDER BY c.updated_at DESC
+       LIMIT $3`,
+      [opts.userId, `%${opts.query}%`, opts.limit]
+    );
+
+    return result.rows.map(normaliseCard);
   },
 };
 

@@ -17,11 +17,15 @@ import {
   viewCardMedia,
   downloadCardMedia,
   bulkDeleteCards,
+  checkDuplicate,
+  searchCards,
 } from "../controllers/card.controller.js";
 import mediaRateLimiter from "../middleware/mediaRateLimiter.js";
 import mediaUploadParser from "../middleware/mediaUploadParser.js";
 const cardRouter = express.Router();
 cardRouter.post("/log", userAuth, mediaUploadParser, createCard);
+cardRouter.post("/cards/check-duplicate", userAuth, checkDuplicate);
+cardRouter.get("/cards/search", userAuth, searchCards);
 cardRouter.post("/:id/media", userAuth, mediaRateLimiter, mediaUploadParser, uploadCardMedia);
 cardRouter.get("/:id/media", userAuth, getCardMedia);
 cardRouter.get("/:id/media/:mediaId/view", userAuth, viewCardMedia);

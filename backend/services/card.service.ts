@@ -4,6 +4,7 @@ import userModel from '../models/userModel.js';
 import userSettingsModel from '../models/userSettingsModel.js';
 import pool from '../config/postgres.js';
 import { redis } from '../config/upstash.js';
+import { generateEmbedding } from '../utils/embedding.js';
 
 export async function invalidateUserCardsCache(userId: string | number) {
   try {
@@ -17,10 +18,26 @@ export async function invalidateUserCardsCache(userId: string | number) {
   }
 }
 
+function toVectorLiteral(values: number[]): string {
+  return `[${values.join(',')}]`;
+}
+
+function formatSimilarityInput(text: string): string {
+  return `task: sentence similarity | query: ${text}`;
+}
+
+function formatSearchInput(text: string): string {
+  return `task: search result | query: ${text}`;
+}
+
 
 export const createService = {
   async create(userId: string, question: string, answer: string, folder: string | undefined) {
-    const card = await cardModel.create({ user_id: userId, question, answer, folder });
+    const embeddingValues = await generateEmbedding(
+      formatSearchInput(`${question} ${answer}`)
+    );
+    const embedding = toVectorLiteral(embeddingValues);
+    const card = await cardModel.create({ user_id: userId, question, answer, folder, embedding });
     await invalidateUserCardsCache(userId);
     return card;
   },
@@ -28,9 +45,13 @@ export const createService = {
 
 export const updateService = {
   async update(userId: string, cardId: string, question: string, answer: string, folder: string) {
+    const embeddingValues = await generateEmbedding(
+      formatSearchInput(`${question} ${answer}`)
+    );
+    const embedding = toVectorLiteral(embeddingValues);
     const card = await cardModel.findAndUpdate(
       { id: cardId, user_id: userId },
-      { question, answer, folder }
+      { question, answer, folder, embedding }
     );
     await invalidateUserCardsCache(userId);
     return card;
@@ -217,6 +238,82 @@ export const cardService = {
       [userId]
     );
     return result.rows[0]?.review_date ?? null;
+  },
+
+  async checkDuplicateService(userId: string, question: string, answer: string) {
+    const results: Array<{ question: string; answer: string; similarity: number }> = [];
+    const seen = new Map<string, { question: string; answer: string; similarity: number }>();
+
+    const trimmedQuestion = question.trim();
+    if (trimmedQuestion) {
+      const questionEmbedding = toVectorLiteral(
+        await generateEmbedding(formatSimilarityInput(trimmedQuestion))
+      );
+      const questionMatches = await cardModel.findDuplicatesByEmbedding({
+        userId,
+        embedding: questionEmbedding,
+        minSimilarity: 0.7,
+        limit: 3,
+      });
+
+      questionMatches.forEach((match) => {
+        const key = `${match.question}||${match.answer}`;
+        const existing = seen.get(key);
+        if (!existing || match.similarity > existing.similarity) {
+          seen.set(key, match);
+        }
+      });
+    }
+
+    const trimmedAnswer = answer.trim();
+    if (trimmedAnswer) {
+      const answerEmbedding = toVectorLiteral(
+        await generateEmbedding(formatSimilarityInput(trimmedAnswer))
+      );
+      const answerMatches = await cardModel.findDuplicatesByEmbedding({
+        userId,
+        embedding: answerEmbedding,
+        minSimilarity: 0.7,
+        limit: 3,
+      });
+
+      answerMatches.forEach((match) => {
+        const key = `${match.question}||${match.answer}`;
+        const existing = seen.get(key);
+        if (!existing || match.similarity > existing.similarity) {
+          seen.set(key, match);
+        }
+      });
+    }
+
+    results.push(...seen.values());
+    results.sort((a, b) => b.similarity - a.similarity);
+    return results.slice(0, 3);
+  },
+
+  async semanticSearchService(userId: string, query: string) {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    if (trimmed.length < 4) {
+      return cardModel.searchByKeyword({
+        userId,
+        query: trimmed,
+        limit: 10,
+      });
+    }
+
+    const embeddingValues = await generateEmbedding(formatSearchInput(trimmed));
+    const embedding = toVectorLiteral(embeddingValues);
+
+    return cardModel.searchByEmbedding({
+      userId,
+      embedding,
+      minSimilarity: 0.65,
+      limit: 10,
+    });
   },
 };
 

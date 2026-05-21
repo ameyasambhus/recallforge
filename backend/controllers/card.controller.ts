@@ -66,6 +66,39 @@ export const updateCard = async (req: Request, res: Response) => {
   }
 };
 
+export const checkDuplicate = async (req: Request, res: Response) => {
+  try {
+    const { question, answer } = req.body;
+    if (!question) {
+      return res.status(400).json({ error: 'Question is required' });
+    }
+
+    const matches = await cardService.checkDuplicateService(
+      String(req.user.id),
+      question,
+      answer ?? ''
+    );
+
+    res.json({ success: true, matches });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'An error occurred' });
+  }
+};
+
+export const searchCards = async (req: Request, res: Response) => {
+  try {
+    const query = String(req.query.q || '').trim();
+    if (!query) {
+      return res.json({ success: true, cards: [] });
+    }
+
+    const cards = await cardService.semanticSearchService(String(req.user.id), query);
+    res.json({ success: true, cards });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'An error occurred' });
+  }
+};
+
 export const getDueCards = async (req: Request, res: Response) => {
   try {
     const cards = await cardService.getDueCardsService(String(req.user.id));

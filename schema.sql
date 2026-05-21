@@ -1,6 +1,8 @@
 -- RecallForge PostgreSQL Schema
 -- Run this first in Neon SQL Editor
 
+CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE TABLE users (
   id SERIAL PRIMARY KEY,
   mongo_id TEXT UNIQUE NOT NULL,
@@ -51,6 +53,7 @@ CREATE TABLE cards (
   folder_id INTEGER REFERENCES folders(id) ON DELETE SET NULL,
   question TEXT NOT NULL,
   answer TEXT NOT NULL,
+  embedding vector(768),
   ef NUMERIC(6,4) NOT NULL DEFAULT 2.5,
   interval INTEGER NOT NULL DEFAULT 1,
   repetitions INTEGER NOT NULL DEFAULT 0,
@@ -63,4 +66,5 @@ CREATE TABLE cards (
 CREATE INDEX idx_cards_user_id ON cards(user_id);
 CREATE INDEX idx_cards_folder_id ON cards(folder_id);
 CREATE INDEX idx_cards_due_date ON cards(due_date);
+CREATE INDEX idx_cards_embedding_cosine ON cards USING ivfflat (embedding vector_cosine_ops);
 CREATE INDEX idx_folders_user_id ON folders(user_id);
