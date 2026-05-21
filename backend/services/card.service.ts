@@ -1,10 +1,10 @@
-import { GoogleGenAI } from '@google/genai';
-import cardModel from '../models/cardModel.js';
-import userModel from '../models/userModel.js';
-import userSettingsModel from '../models/userSettingsModel.js';
-import pool from '../config/postgres.js';
-import { redis } from '../config/upstash.js';
-import { generateEmbedding } from '../utils/embedding.js';
+import { GoogleGenAI } from "@google/genai";
+import cardModel from "../models/cardModel.js";
+import userModel from "../models/userModel.js";
+import userSettingsModel from "../models/userSettingsModel.js";
+import pool from "../config/postgres.js";
+import { redis } from "../config/upstash.js";
+import { generateEmbedding } from "../utils/embedding.js";
 
 export async function invalidateUserCardsCache(userId: string | number) {
   try {
@@ -19,7 +19,7 @@ export async function invalidateUserCardsCache(userId: string | number) {
 }
 
 function toVectorLiteral(values: number[]): string {
-  return `[${values.join(',')}]`;
+  return `[${values.join(",")}]`;
 }
 
 function formatSimilarityInput(text: string): string {
@@ -30,28 +30,44 @@ function formatSearchInput(text: string): string {
   return `task: search result | query: ${text}`;
 }
 
-
 export const createService = {
-  async create(userId: string, question: string, answer: string, folder: string | undefined) {
+  async create(
+    userId: string,
+    question: string,
+    answer: string,
+    folder: string | undefined,
+  ) {
     const embeddingValues = await generateEmbedding(
-      formatSearchInput(`${question} ${answer}`)
+      formatSearchInput(`${question} ${answer}`),
     );
     const embedding = toVectorLiteral(embeddingValues);
-    const card = await cardModel.create({ user_id: userId, question, answer, folder, embedding });
+    const card = await cardModel.create({
+      user_id: userId,
+      question,
+      answer,
+      folder,
+      embedding,
+    });
     await invalidateUserCardsCache(userId);
     return card;
   },
 };
 
 export const updateService = {
-  async update(userId: string, cardId: string, question: string, answer: string, folder: string) {
+  async update(
+    userId: string,
+    cardId: string,
+    question: string,
+    answer: string,
+    folder: string,
+  ) {
     const embeddingValues = await generateEmbedding(
-      formatSearchInput(`${question} ${answer}`)
+      formatSearchInput(`${question} ${answer}`),
     );
     const embedding = toVectorLiteral(embeddingValues);
     const card = await cardModel.findAndUpdate(
       { id: cardId, user_id: userId },
-      { question, answer, folder, embedding }
+      { question, answer, folder, embedding },
     );
     await invalidateUserCardsCache(userId);
     return card;
@@ -60,7 +76,10 @@ export const updateService = {
 
 export const deleteService = {
   async delete(userId: string, cardId: string) {
-    const result = await cardModel.findAndDelete({ id: cardId, user_id: userId });
+    const result = await cardModel.findAndDelete({
+      id: cardId,
+      user_id: userId,
+    });
     await invalidateUserCardsCache(userId);
     return result;
   },
@@ -77,7 +96,7 @@ export const cardService = {
   },
 
   getISTDateStr(date: Date = new Date()): string {
-    return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    return date.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   },
 
   async getDueCardsService(userId: string) {
@@ -92,20 +111,28 @@ export const cardService = {
     folder: string,
     search: string,
     sortBy: string,
-    sortOrder: string
+    sortOrder: string,
   ) {
     const cacheKey = `cards:${userId}:page:${page}`;
-    const isDefaultQuery = !folder && !search && limit === 10 && sortBy === 'dueDate' && sortOrder === 'asc';
+    const isDefaultQuery =
+      !folder &&
+      !search &&
+      limit === 10 &&
+      sortBy === "dueDate" &&
+      sortOrder === "asc";
 
     if (isDefaultQuery) {
       try {
         const cachedData = await redis.get(cacheKey);
         if (cachedData) {
-          const parsed = typeof cachedData === 'string' ? JSON.parse(cachedData) : cachedData;
+          const parsed =
+            typeof cachedData === "string"
+              ? JSON.parse(cachedData)
+              : cachedData;
           if (
             parsed &&
             Array.isArray(parsed.cards) &&
-            typeof parsed.total === 'number' &&
+            typeof parsed.total === "number" &&
             Array.isArray(parsed.folders)
           ) {
             return parsed;
@@ -114,7 +141,7 @@ export const cardService = {
           await redis.del(cacheKey);
         }
       } catch (err) {
-        console.error('Redis cache hit error:', err);
+        console.error("Redis cache hit error:", err);
       }
     }
 
@@ -135,7 +162,7 @@ export const cardService = {
       try {
         await redis.set(cacheKey, JSON.stringify(result), { ex: 30 });
       } catch (err) {
-        console.error('Redis cache store error:', err);
+        console.error("Redis cache store error:", err);
       }
     }
 
@@ -170,7 +197,9 @@ export const cardService = {
       } else if (repetitions === 2) {
         interval = 6;
       } else {
-        interval = Math.round(interval * ef * Number(settings.interval_modifier));
+        interval = Math.round(
+          interval * ef * Number(settings.interval_modifier),
+        );
       }
 
       if (quality === 5) {
@@ -192,7 +221,7 @@ export const cardService = {
 
     const updatedCard = await cardModel.findAndUpdate(
       { id: cardId, user_id: userId },
-      { ef, repetitions, interval, due_date: nextDue }
+      { ef, repetitions, interval, due_date: nextDue },
     );
 
     // Invalidate user card cache on review
@@ -203,7 +232,9 @@ export const cardService = {
     if (user) {
       const todayStr = this.getISTDateStr();
       const lastReviewDate = await this.getLastReviewDate(Number(userId));
-      const lastReviewStr = lastReviewDate ? String(lastReviewDate).slice(0, 10) : null;
+      const lastReviewStr = lastReviewDate
+        ? String(lastReviewDate).slice(0, 10)
+        : null;
 
       // Upsert today's review_history row
       await pool.query(
@@ -211,7 +242,7 @@ export const cardService = {
          VALUES ($1, $2, 1)
          ON CONFLICT (user_id, review_date)
          DO UPDATE SET cards_reviewed = review_history.cards_reviewed + 1`,
-        [userId, todayStr]
+        [userId, todayStr],
       );
 
       if (todayStr !== lastReviewStr) {
@@ -235,19 +266,30 @@ export const cardService = {
   async getLastReviewDate(userId: number): Promise<string | null> {
     const result = await pool.query<{ review_date: string }>(
       `SELECT review_date::text FROM review_history WHERE user_id = $1 ORDER BY review_date DESC LIMIT 1`,
-      [userId]
+      [userId],
     );
     return result.rows[0]?.review_date ?? null;
   },
 
-  async checkDuplicateService(userId: string, question: string, answer: string) {
-    const results: Array<{ question: string; answer: string; similarity: number }> = [];
-    const seen = new Map<string, { question: string; answer: string; similarity: number }>();
+  async checkDuplicateService(
+    userId: string,
+    question: string,
+    answer: string,
+  ) {
+    const results: Array<{
+      question: string;
+      answer: string;
+      similarity: number;
+    }> = [];
+    const seen = new Map<
+      string,
+      { question: string; answer: string; similarity: number }
+    >();
 
     const trimmedQuestion = question.trim();
     if (trimmedQuestion) {
       const questionEmbedding = toVectorLiteral(
-        await generateEmbedding(formatSimilarityInput(trimmedQuestion))
+        await generateEmbedding(formatSimilarityInput(trimmedQuestion)),
       );
       const questionMatches = await cardModel.findDuplicatesByEmbedding({
         userId,
@@ -268,7 +310,7 @@ export const cardService = {
     const trimmedAnswer = answer.trim();
     if (trimmedAnswer) {
       const answerEmbedding = toVectorLiteral(
-        await generateEmbedding(formatSimilarityInput(trimmedAnswer))
+        await generateEmbedding(formatSimilarityInput(trimmedAnswer)),
       );
       const answerMatches = await cardModel.findDuplicatesByEmbedding({
         userId,
@@ -321,11 +363,11 @@ export const generateService = {
   async generateAnswerService(question: string) {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const response = await ai.models.generateContentStream({
-      model: 'gemini-2.5-flash-lite',
+      model: "gemini-2.5-flash-lite",
       contents: question,
       config: {
         systemInstruction:
-          'You are a tutor. You will be provided a question or a topic, mostly related to academics. Generate a short, concise response which will explain what the given topic is. Complete your response within 200 max output tokens',
+          "You are a tutor. You will be provided a question or a topic, mostly related to academics. Generate a short, concise response which will explain what the given topic is. Complete your response within 200 max output tokens",
         maxOutputTokens: 200,
       },
     });
