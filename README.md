@@ -8,7 +8,7 @@ Users create cards for topics they learn, and the app schedules intelligent revi
 
 ## Features
 - Full-stack app: **React, Node/Express, PostgreSQL (Neon)**
-- JWT authentication with **OTP email verification**, password reset, and **reCAPTCHA** checks
+- JWT authentication with **OTP email verification**, password reset
 - **SM-2 spaced repetition** with user-tunable scheduling settings
 - **AI-powered answer generation** (Gemini) with server-sent streaming and usage limits by plan
 - **Card attachments** (images/PDFs), OCR extraction, and Cloudinary moderation webhooks
@@ -64,7 +64,7 @@ Users create cards for topics they learn, and the app schedules intelligent revi
 **Authentication & Security:**
 - JWT-based authentication
 - Email verification and password reset using OTP
-- reCAPTCHA validation and rate limiting
+- Rate limiting using Redis
 
 ---
 
@@ -72,7 +72,7 @@ Users create cards for topics they learn, and the app schedules intelligent revi
 - **Frontend:** React, Vite, Tailwind, DaisyUI
 - **Backend:** Node.js, Express.js, TypeScript
 - **Database:** PostgreSQL (Neon)
-- **Auth & Security:** JWT, OTP via Nodemailer, reCAPTCHA, rate limiting
+- **Auth & Security:** JWT, OTP via Nodemailer, rate limiting
 - **AI Integration:** Gemini API for answer generation
-- **Media:** Cloudinary, Tesseract OCR, PDF Poppler, Sharp
+- **Media:** Cloudinary, Tesseract OCR, Poppler utils (pdftoppm), Sharp
 - **Payments:** Razorpay

@@ -2,6 +2,9 @@ FROM node:22-alpine
 
 WORKDIR /app
 
+# PDF rendering for OCR (pdftoppm)
+RUN apk add --no-cache poppler-utils
+
 # Copy package files
 COPY package*.json ./
 COPY backend/package*.json ./backend/

@@ -1,14 +1,16 @@
 /// <reference lib="dom" />
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { createWorker } from "tesseract.js";
-import pdfPoppler from "pdf-poppler";
 import sharp from "sharp";
 import { generateEmbedding } from "./embedding.js";
 import cardMediaModel, { OcrStatus } from "../models/cardMediaModel.js";
 
 const MIN_TEXT_LENGTH = 10;
+const execFileAsync = promisify(execFile);
 
 function toVectorLiteral(values: number[]): string {
   return `[${values.join(",")}]`;
@@ -58,6 +60,23 @@ async function runTesseractOnImages(imagePaths: string[]): Promise<string> {
   }
 }
 
+async function convertPdfToPngs(
+  pdfPath: string,
+  outputDir: string,
+  prefix: string,
+): Promise<string[]> {
+  await execFileAsync("pdftoppm", ["-png", "-r", "200", pdfPath, path.join(outputDir, prefix)]);
+  const files = await fs.readdir(outputDir);
+  return files
+    .filter((name) => name.startsWith(`${prefix}-`) && name.endsWith(".png"))
+    .sort((a, b) => {
+      const aNum = Number(a.match(/-(\d+)\.png$/)?.[1] || 0);
+      const bNum = Number(b.match(/-(\d+)\.png$/)?.[1] || 0);
+      return aNum - bNum;
+    })
+    .map((name) => path.join(outputDir, name));
+}
+
 export async function extractTextFromMedia(
   mediaId: number,
   url: string,
@@ -86,21 +105,7 @@ export async function extractTextFromMedia(
         const buffer = await downloadToBuffer(url);
         await fs.writeFile(pdfPath, buffer);
 
-        await pdfPoppler.convert(pdfPath, {
-          format: "png",
-          out_dir: tmpDir,
-          out_prefix: "page",
-          page: null,
-        });
-
-        const pageFiles = (await fs.readdir(tmpDir))
-          .filter((name) => name.startsWith("page-") && name.endsWith(".png"))
-          .sort((a, b) => {
-            const aNum = Number(a.match(/page-(\d+)/)?.[1] || 0);
-            const bNum = Number(b.match(/page-(\d+)/)?.[1] || 0);
-            return aNum - bNum;
-          })
-          .map((name) => path.join(tmpDir, name));
+        const pageFiles = await convertPdfToPngs(pdfPath, tmpDir, "page");
 
         if (pageFiles.length) {
           extractedText = await runTesseractOnImages(pageFiles);
