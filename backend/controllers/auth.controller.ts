@@ -1,35 +1,30 @@
-import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
-import { Request, Response } from "express";
-import { loginService, registerService, resetService, verifyService } from "../services/auth.service.js";
-import axios from "axios";
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import { Request, Response } from 'express';
+import {
+  loginService,
+  registerService,
+  resetService,
+  verifyService,
+} from '../services/auth.service.js';
+import axios from 'axios';
 
 export const register = async (req: Request, res: Response) => {
   const { name, email, password } = req.body;
   if (!name || !email || !password) {
-    return res.json({
-      success: false,
-      message: "Missing details",
-    });
+    return res.json({ success: false, message: 'Missing details' });
   }
   try {
     const existingUser = await registerService.getExistingUser(email);
     if (existingUser) {
-      return res.json({
-        success: false,
-        message: "User already exists",
-      });
+      return res.json({ success: false, message: 'User already exists' });
     }
     const { userId } = await registerService.registerFunc(name, email, password);
-
-    res.status(201).json({
-      success: true,
-      userId,
-    });
+    res.status(201).json({ success: true, userId });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error instanceof Error ? error.message : "An error occurred",
+      message: error instanceof Error ? error.message : 'An error occurred',
     });
   }
 };
@@ -37,64 +32,58 @@ export const register = async (req: Request, res: Response) => {
 export const login = async (req: Request, res: Response) => {
   const { email, password } = req.body;
   if (!email || !password) {
-    return res.json({
-      success: false,
-      message: "Missing details",
-    });
+    return res.json({ success: false, message: 'Missing details' });
   }
   try {
     const user = await loginService.getUser(email);
     if (!user) {
-      return res.json({
-        success: false,
-        message: "User not found",
-      });
+      return res.json({ success: false, message: 'User not found' });
     }
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
+      return res.json({ success: false, message: 'Invalid credentials' });
+    }
+    if (!user.is_account_verified) {
       return res.json({
         success: false,
-        message: "Invalid credentials",
+        isNotVerified: true,
+        email: user.email,
+        message: 'Account is not verified. Please verify your email first.',
       });
     }
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET as string, {
-      expiresIn: "7d",
+    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET as string, {
+      expiresIn: '7d',
     });
-    res.cookie("token", token, {
+    res.cookie('token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
-    res.status(200).json({
-      success: true,
-    });
+    res.status(200).json({ success: true });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error instanceof Error ? error.message : "An error occurred",
+      message: error instanceof Error ? error.message : 'An error occurred',
     });
   }
 };
 
 export const logout = async (req: Request, res: Response) => {
   try {
-    console.log("Logging out user...");
-    res.clearCookie("token", {
+    console.log('Logging out user...');
+    res.clearCookie('token', {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
     });
-    console.log("Cookie cleared successfully.");
-    res.status(200).json({
-      success: true,
-      message: "Logged out successfully",
-    });
+    console.log('Cookie cleared successfully.');
+    res.status(200).json({ success: true, message: 'Logged out successfully' });
   } catch (error) {
-    console.error("Logout error:", error);
+    console.error('Logout error:', error);
     res.status(500).json({
       success: false,
-      message: error instanceof Error ? error.message : "An error occurred",
+      message: error instanceof Error ? error.message : 'An error occurred',
     });
   }
 };
@@ -102,54 +91,56 @@ export const logout = async (req: Request, res: Response) => {
 export const sendVerifyOtp = async (req: Request, res: Response) => {
   const { email } = req.body;
   if (!email) {
-    return res.json({
-      success: false,
-      message: "Missing details",
-    });
+    return res.json({ success: false, message: 'Missing details' });
   }
   try {
     const user = await verifyService.getUser(email);
-    // Try to send OTP, if it fails, delete the user
+    if (!user) {
+      return res.json({ success: false, message: 'User not found' });
+    }
     try {
       await verifyService.sendOTP(user);
-      res.json({ success: true, message: "OTP sent to email" });
+      res.json({ success: true, message: 'OTP sent to email' });
     } catch (otpError) {
-      // OTP sending failed, delete the unverified user
-      await verifyService.deleteUnverifiedUser(user._id);
+      await verifyService.deleteUnverifiedUser(user.id);
       res.json({
         success: false,
-        message: "Failed to send OTP. Account has been removed. Please try registering again.",
-        accountDeleted: true
+        message:
+          'Failed to send OTP. Account has been removed. Please try registering again.',
+        accountDeleted: true,
       });
     }
   } catch (error) {
-    res.json({ success: false, message: error instanceof Error ? error.message : "An error occurred" });
+    res.json({
+      success: false,
+      message: error instanceof Error ? error.message : 'An error occurred',
+    });
   }
 };
 
 export const verifyEmail = async (req: Request, res: Response) => {
   const { email, otp } = req.body;
   if (!email || !otp) {
-    return res.json({
-      success: false,
-      message: "Missing details",
-    });
+    return res.json({ success: false, message: 'Missing details' });
   }
   try {
     const user = await verifyService.getUser(email);
     if (!user) {
-      return res.json({ success: false, message: "User not found" });
+      return res.json({ success: false, message: 'User not found' });
     }
-    if (user.verifyOtp !== otp) {
-      return res.json({ success: false, message: "Invalid OTP" });
+    if (user.verify_otp !== otp) {
+      return res.json({ success: false, message: 'Invalid OTP' });
     }
-    if (user.verifyOtpExpireAt < Date.now()) {
-      return res.json({ success: false, message: "OTP expired" });
+    if (user.verify_otp_expire_at < Date.now()) {
+      return res.json({ success: false, message: 'OTP expired' });
     }
     await verifyService.verify(user);
-    res.json({ success: true, message: "Email verified successfully. Please Login." });
+    res.json({ success: true, message: 'Email verified successfully. Please Login.' });
   } catch (error) {
-    res.json({ success: false, message: error instanceof Error ? error.message : "An error occurred" });
+    res.json({
+      success: false,
+      message: error instanceof Error ? error.message : 'An error occurred',
+    });
   }
 };
 
@@ -157,54 +148,63 @@ export const isAuthenticated = async (req: Request, res: Response) => {
   try {
     return res.json({ success: true });
   } catch (error) {
-    res.json({ success: false, message: error instanceof Error ? error.message : "An error occurred" });
+    res.json({
+      success: false,
+      message: error instanceof Error ? error.message : 'An error occurred',
+    });
   }
 };
 
 export const sendResetOtp = async (req: Request, res: Response) => {
   const { email } = req.body;
   if (!email) {
-    return res.json({ success: false, message: "Email is required" });
+    return res.json({ success: false, message: 'Email is required' });
   }
   try {
     const user = await resetService.getUser(email);
     if (!user) {
-      return res.json({ success: false, message: "User not found" });
+      return res.json({ success: false, message: 'User not found' });
     }
     await resetService.resetOTP(user);
-    res.json({ success: true, message: "OTP sent to email" });
+    res.json({ success: true, message: 'OTP sent to email' });
   } catch (error) {
-    res.json({ success: false, message: error instanceof Error ? error.message : "An error occurred" });
+    res.json({
+      success: false,
+      message: error instanceof Error ? error.message : 'An error occurred',
+    });
   }
 };
 
 export const resetPassword = async (req: Request, res: Response) => {
   const { email, otp, newPassword } = req.body;
   if (!email || !otp || !newPassword) {
-    return res.json({ success: false, message: "All fields are required" });
+    return res.json({ success: false, message: 'All fields are required' });
   }
   try {
     const user = await resetService.getUser(email);
     if (!user) {
-      return res.json({ success: false, message: "User not found" });
+      return res.json({ success: false, message: 'User not found' });
     }
-    if (user.resetOtp !== otp) {
-      return res.json({ success: false, message: "Invalid OTP" });
+    if (user.reset_otp !== otp) {
+      return res.json({ success: false, message: 'Invalid OTP' });
     }
-    if (user.resetOtpExpireAt < Date.now()) {
-      return res.json({ success: false, message: "OTP expired" });
+    if (user.reset_otp_expire_at < Date.now()) {
+      return res.json({ success: false, message: 'OTP expired' });
     }
     await resetService.reset(user, newPassword);
-    res.json({ success: true, message: "Password reset successfully" });
+    res.json({ success: true, message: 'Password reset successfully' });
   } catch (error) {
-    res.json({ success: false, message: error instanceof Error ? error.message : "An error occurred" });
+    res.json({
+      success: false,
+      message: error instanceof Error ? error.message : 'An error occurred',
+    });
   }
 };
 
 export const verifyRecaptcha = async (req: Request, res: Response) => {
   const { token } = req.body;
   if (!token) {
-    return res.json({ success: false, message: "Token is required" });
+    return res.json({ success: false, message: 'Token is required' });
   }
   try {
     const response = await axios.post(
@@ -213,10 +213,12 @@ export const verifyRecaptcha = async (req: Request, res: Response) => {
     if (response.data.success) {
       return res.json({ success: true });
     } else {
-      return res.json({ success: false, message: "Invalid reCAPTCHA token" });
+      return res.json({ success: false, message: 'Invalid reCAPTCHA token' });
     }
   } catch (error) {
-    res.json({ success: false, message: error instanceof Error ? error.message : "An error occurred" });
+    res.json({
+      success: false,
+      message: error instanceof Error ? error.message : 'An error occurred',
+    });
   }
 };
-

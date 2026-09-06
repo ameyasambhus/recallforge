@@ -1,10 +1,10 @@
-import { Document } from "mongoose";
+export {};
 
 declare global {
   namespace Express {
     interface Request {
       userId?: string;
-      user?: any; // You can replace 'any' with your User model type
+      user?: any;
     }
   }
 }

@@ -42,7 +42,7 @@ const Heatmap = ({ reviewHistory }) => {
 
     // Iterate until we reach endOfWeek
     while (currentDate <= endOfWeek) {
-        const dateStr = currentDate.toISOString().split('T')[0];
+        const dateStr = currentDate.toLocaleDateString('en-CA'); // YYYY-MM-DD in local TZ (matches backend IST keys)
         const month = currentDate.getMonth();
 
         // Check for month change

@@ -1,28 +1,33 @@
 # RecallForge
 
 ## Project Overview
-RecallForge is a **full-stack MERN application** designed to help students study smarter using **Active Recall** and **Spaced Repetition**.  
+RecallForge is a **full-stack React + Node + PostgreSQL application** designed to help students study smarter using **Active Recall** and **Spaced Repetition**.
 Users create cards for topics they learn, and the app schedules intelligent reviews to maximize memory retention and learning efficiency.
 
 ---
 
 ## Features
-- Full-stack MERN app: **MongoDB, Express, React, Node**
-- JWT authentication with **OTP email verification** and password reset via **Nodemailer**
-- **SM-2 spaced repetition algorithm** for personalized study schedules
-- **AI-powered answer generation** using Gemini API to automatically generate answers for questions logged during study sessions
+- Full-stack app: **React, Node/Express, PostgreSQL (Neon)**
+- JWT authentication with **OTP email verification**, password reset
+- **SM-2 spaced repetition** with user-tunable scheduling settings
+- **AI-powered answer generation** (Gemini) with server-sent streaming and usage limits by plan
+- **Card attachments** (images/PDFs), OCR extraction, and Cloudinary moderation webhooks
+- **Semantic search** across cards and duplicate detection
+- **Folders and lists** with list sharing and permission management
+- **Subscriptions and billing** (Razorpay) with plan-based limits
 - Responsive UI for **quick, focused learning**
 
 ---
 
 ## How RecallForge Works
 
-1. **Create a Card:** Enter a **question and answer** for each topic you learn. Each card represents knowledge you want to retain.
-   - **AI-Assisted Learning:** When logging your daily study, type in questions about what you learned. The **Gemini API** can automatically generate comprehensive answers, making it faster to create revision cards.
-2. **Organize by Subject:** Group cards into **folders based on subjects**. This allows you to filter and focus reviews on specific subjects or topics  
-3. **Intelligent Scheduling:** Each card is automatically assigned a review schedule using the **SM-2 algorithm**.  
-4. **Daily Reviews:** Visit the **Review Section** to see cards due for review. Attempt to recall each answer.  
-5. **Feedback & Adaptation:** Rate how well you remembered each card (0–5). The system updates the next review interval for maximum retention.
+1. **Create a Card:** Enter a **question and answer** for each topic you learn.
+  - **AI-Assisted Learning:** Draft a question and let the **Gemini API** stream back a suggested answer.
+  - **Media Attachments:** Add images or PDFs; OCR extracts text for faster review.
+2. **Organize by Subject:** Group cards into **folders** and curated **lists** (shareable with permissions).
+3. **Intelligent Scheduling:** Each card is assigned a review schedule using the **SM-2 algorithm** with configurable user settings.
+4. **Daily Reviews:** Visit the **Review Section** to see cards due for review. Attempt to recall each answer.
+5. **Feedback & Adaptation:** Rate recall (0–5). The system updates the next review interval for maximum retention.
 
 ---
 
@@ -48,23 +53,26 @@ Users create cards for topics they learn, and the app schedules intelligent revi
 ## Implementation Details
 
 **Backend:**
-- MongoDB stores cards with question, answer, EF, interval, repetition, next review date  
-- RESTful APIs for creating cards, fetching due reviews, updating feedback  
+- PostgreSQL stores cards, folders, lists, media metadata, subscriptions, and user settings
+- RESTful APIs for cards, lists, media, billing, and account management
+- OCR pipeline for attachments and Cloudinary moderation webhooks
 
 **Frontend:**
-- React.js for responsive, intuitive UI  
-- Review tab to revise all due cards one by one
-- Cards tab displays all cards and allows to filter by subjects
+- React + Vite for a responsive, fast UI
+- Review flow, card management, folders, and shared lists
 
 **Authentication & Security:**
-- JWT-based authentication  
-- Email verification and password reset using OTP verification
+- JWT-based authentication
+- Email verification and password reset using OTP
+- Rate limiting using Redis
 
 ---
 
 ## Tech Stack
-- **Frontend:** React.js  
-- **Backend:** Node.js, Express.js  
-- **Database:** MongoDB  
-- **Authentication:** JWT, OTP verification via Nodemailer
-- **AI Integration:** Gemini API for intelligent answer generation
+- **Frontend:** React, Vite, Tailwind, DaisyUI
+- **Backend:** Node.js, Express.js, TypeScript
+- **Database:** PostgreSQL (Neon)
+- **Auth & Security:** JWT, OTP via Nodemailer, rate limiting
+- **AI Integration:** Gemini API for answer generation
+- **Media:** Cloudinary, Tesseract OCR, Poppler utils (pdftoppm), Sharp
+- **Payments:** Razorpay

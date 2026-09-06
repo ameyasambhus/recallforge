@@ -5,6 +5,10 @@ import Setting from "../components/dashboard/Setting";
 import { AppContent } from "../context/AppContext";
 import Review from "../components/dashboard/Review";
 import AllCards from "../components/dashboard/AllCards";
+import Folders from "../components/dashboard/Folders";
+import Lists from "../components/dashboard/Lists";
+import ListView from "../components/dashboard/ListView";
+import Streak from "../components/dashboard/Streak";
 
 import { User, LogOut, Settings, FileJson, KeyRound } from "lucide-react";
 import axios from "axios";
@@ -28,56 +32,6 @@ const TopNav = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-
-  const exportData = async () => {
-    try {
-      const { data } = await axios.get("/api/data/export");
-      if (data.success) {
-        const jsonString = JSON.stringify(data.data, null, 2);
-        const blob = new Blob([jsonString], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `recallforge_backup_${new Date().toISOString().split("T")[0]}.json`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        toast.success("Data exported successfully");
-      } else {
-        toast.error(data.message);
-      }
-    } catch (error) {
-      console.error("Export error:", error);
-      toast.error("Failed to export data");
-    }
-  };
-
-  const importData = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const jsonData = JSON.parse(e.target.result);
-        const { data } = await axios.post("/api/data/import", {
-          data: jsonData,
-        });
-        if (data.success) {
-          toast.success(data.message);
-        } else {
-          toast.error(data.message);
-        }
-      } catch (error) {
-        console.error("Import error:", error);
-        toast.error("Invalid JSON file or import failed");
-      }
-    };
-    reader.readAsText(file);
-    event.target.value = "";
-    setIsDropdownOpen(false);
-  };
-
   return (
     <header className="sticky top-0 z-50 border-b border-white/5 bg-neutral-950/80 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
@@ -86,27 +40,43 @@ const TopNav = () => {
             RecallForge
           </span>
           {userData && (
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1 ml-4 rounded-full bg-white/5 border border-white/10" title="Daily Streak">
+            <Link 
+              to="/app/streak" 
+              className="hidden sm:flex items-center gap-2 px-3 py-1 ml-4 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all duration-200 cursor-pointer active:scale-95 hover:border-indigo-500/50 hover:text-indigo-400 group" 
+              title="View Daily Streak Grid"
+            >
               <span className="text-lg leading-none">
                 {userData.currentStreak > 0 ? "🔥" : "😢"}
               </span>
-              <span className="font-mono font-bold text-white">
+              <span className="font-mono font-bold text-white group-hover:text-indigo-300">
                 {userData.currentStreak || 0}
               </span>
-            </div>
+              <span className="h-4 w-px bg-white/10 mx-1"></span>
+              <span className="text-xs text-neutral-400 group-hover:text-indigo-400 transition-colors">
+                View Activity
+              </span>
+            </Link>
           )}
         </div>
 
         <nav aria-label="Primary" className="flex items-center gap-3">
           {userData && (
-            <div className="sm:hidden flex items-center gap-1 px-2 py-1 rounded-full bg-white/5 border border-white/10">
+            <Link 
+              to="/app/streak" 
+              className="sm:hidden flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all duration-200 cursor-pointer active:scale-95 hover:border-indigo-500/50 hover:text-indigo-400 group" 
+              title="View Daily Streak Grid"
+            >
               <span className="text-base">
                 {userData.currentStreak > 0 ? "🔥" : "😢"}
               </span>
-              <span className="text-sm font-bold text-white">
+              <span className="text-sm font-bold text-white group-hover:text-indigo-300">
                 {userData.currentStreak || 0}
               </span>
-            </div>
+              <span className="h-3.5 w-px bg-white/10 mx-0.5"></span>
+              <span className="text-[10px] text-neutral-400 group-hover:text-indigo-400 transition-colors">
+                View Activity
+              </span>
+            </Link>
           )}
           <div className="md:flex items-center gap-3">
             <Link to="/app/log" className="btn btn-primary bg-transparent text-sm">
@@ -117,6 +87,12 @@ const TopNav = () => {
             </Link>
             <Link to="/app/cards" className="btn btn-primary bg-transparent text-sm">
               Cards
+            </Link>
+            <Link to="/app/folders" className="btn btn-primary bg-transparent text-sm">
+              Folders
+            </Link>
+            <Link to="/app/lists" className="btn btn-primary bg-transparent text-sm">
+              Lists
             </Link>
           </div>
 
@@ -149,28 +125,6 @@ const TopNav = () => {
                   Change Password
                 </Link>
 
-                <button
-                  onClick={() => {
-                     exportData();
-                     setIsDropdownOpen(false);
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-300 hover:bg-white/5 hover:text-white text-left"
-                >
-                  <FileJson size={16} />
-                  Export Data
-                </button>
-
-                <label className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-300 hover:bg-white/5 hover:text-white">
-                  <FileJson size={16} />
-                  Import Data
-                  <input
-                    type="file"
-                    accept=".json"
-                    onChange={importData}
-                    className="hidden"
-                  />
-                </label>
-
                 <div className="my-1 border-t border-white/5"></div>
                 
                 <button
@@ -194,16 +148,22 @@ const TopNav = () => {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { loggedIn, userData } = useContext(AppContent);
-  const redirect = async () => {
-    if (!loggedIn) {
+  const { loggedIn, userData, isAuthLoading } = useContext(AppContent);
+  
+  useEffect(() => {
+    if (!isAuthLoading && !loggedIn) {
       navigate("/auth");
     }
-    // Removed email verification check - all users must verify during registration
-  };
-  useEffect(() => {
-    redirect();
-  }, [loggedIn, userData]);
+  }, [loggedIn, isAuthLoading, navigate]);
+
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-neutral-950 flex justify-center items-center">
+        <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
       <TopNav />
@@ -213,7 +173,11 @@ export default function Dashboard() {
           <Route path="log" element={<Log />} />
           <Route path="review" element={<Review />} />
           <Route path="cards" element={<AllCards />} />
+          <Route path="folders" element={<Folders />} />
+          <Route path="lists" element={<Lists />} />
+          <Route path="lists/:id" element={<ListView />} />
           <Route path="settings" element={<Setting />} />
+          <Route path="streak" element={<Streak />} />
         </Routes>
       </main>
     </div>

@@ -4,7 +4,6 @@ import { Eye, EyeOff } from "lucide-react";
 import { AppContent } from "../context/AppContext";
 import axios from "axios";
 import toast from "react-hot-toast";
-import Recaptcha from "../components/Recaptcha";
 
 const AuthPage = () => {
   const navigate = useNavigate();
@@ -15,8 +14,6 @@ const AuthPage = () => {
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
-  const [showLoginCaptcha, setShowLoginCaptcha] = useState(false);
-  const [showSignupCaptcha, setShowSignupCaptcha] = useState(false);
   const { setLoggedIn, getUserData, userData, loggedIn } =
     useContext(AppContent);
 
@@ -36,9 +33,6 @@ const AuthPage = () => {
     if (newTab === "login") {
       setOtpSent(false);
       setOtp("");
-      setShowSignupCaptcha(false);
-    } else {
-      setShowLoginCaptcha(false);
     }
   };
 
@@ -101,7 +95,6 @@ const AuthPage = () => {
       // Reset form on error
       setOtpSent(false);
       setOtp("");
-      setShowSignupCaptcha(false);
     }
   };
 
@@ -111,19 +104,11 @@ const AuthPage = () => {
       toast.error("Please fill in all fields");
       return;
     }
-    setShowLoginCaptcha(true);
+    onLogin();
   };
 
-  const onLoginVerify = async (token) => {
+  const onLogin = async () => {
     try {
-      // Verify captcha
-      const verifyResponse = await axios.post("/api/auth/verify-recaptcha", { token });
-      if (!verifyResponse.data.success) {
-        toast.error(verifyResponse.data.message || "Captcha verification failed");
-        window.grecaptcha?.reset();
-        return;
-      }
-
       axios.defaults.withCredentials = true;
       const { data } = await axios.post("/api/auth/login", {
         email,
@@ -135,44 +120,40 @@ const AuthPage = () => {
         navigate("/app/log");
       } else {
         toast.error(data.message);
-        window.grecaptcha?.reset();
+        if (data.isNotVerified) {
+          setTab("signup");
+          setOtpSent(true);
+          try {
+            const otpResponse = await axios.post("/api/auth/send-verify-otp", { email });
+            if (otpResponse.data.success) {
+              toast.success("A new verification OTP has been sent to your email.");
+            } else {
+              toast.error(otpResponse.data.message);
+            }
+          } catch (otpError) {
+            console.error("Error sending auto-OTP for unverified login:", otpError);
+            toast.error("Failed to send OTP automatically. Please request it manually or try registering again.");
+          }
+        }
       }
     } catch (error) {
       toast.error("An error occurred. Please try again.");
       console.error("Error during authentication:", error);
-      window.grecaptcha?.reset();
     }
   };
 
   const handleSignupSubmit = (e) => {
     e.preventDefault();
     if (otpSent) {
-      // Verify OTP stage - show captcha
+      // Verify OTP stage
       if (!otp || otp.length !== 6) {
         toast.error("Please enter a valid OTP");
         return;
       }
-      setShowSignupCaptcha(true);
+      verifyOtp();
     } else {
-      // Send OTP stage - No Recaptcha
+      // Send OTP stage
       sendOtp();
-    }
-  };
-
-  const onSignupVerify = async (token) => {
-    try {
-      const verifyResponse = await axios.post("/api/auth/verify-recaptcha", { token });
-      if (!verifyResponse.data.success) {
-        toast.error(verifyResponse.data.message || "Captcha verification failed");
-        window.grecaptcha?.reset();
-        return;
-      }
-
-      await verifyOtp();
-    } catch (error) {
-      console.error("Captcha error", error);
-      toast.error("Captcha verification failed");
-      window.grecaptcha?.reset();
     }
   };
 
@@ -260,18 +241,12 @@ const AuthPage = () => {
             </div>
 
             <br />
-            {showLoginCaptcha ? (
-              <div className="mb-4 flex justify-center">
-                <Recaptcha onVerify={onLoginVerify} />
-              </div>
-            ) : (
-              <button
-                type="submit"
-                className="btn btn-primary w-full py-2 rounded bg-gradient-to-r from-[#605dff] to-[#2f2da5] font-semibold"
-              >
-                Sign In
-              </button>
-            )}
+            <button
+              type="submit"
+              className="btn btn-primary w-full py-2 rounded bg-gradient-to-r from-[#605dff] to-[#2f2da5] font-semibold"
+            >
+              Sign In
+            </button>
           </form>
         ) : (
           <form onSubmit={handleSignupSubmit}>
@@ -356,19 +331,13 @@ const AuthPage = () => {
                   />
                 </div>
                 <br />
-                {showSignupCaptcha ? (
-                  <div className="mb-4 flex justify-center">
-                    <Recaptcha onVerify={onSignupVerify} />
-                  </div>
-                ) : (
-                  <button
-                    type="submit"
-                    className="w-full py-2 rounded bg-gradient-to-r from-[#605dff] to-[#2826a1] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={!otp || otp.length !== 6}
-                  >
-                    Verify OTP & Create Account
-                  </button>
-                )}
+                <button
+                  type="submit"
+                  className="w-full py-2 rounded bg-gradient-to-r from-[#605dff] to-[#2826a1] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={!otp || otp.length !== 6}
+                >
+                  Verify OTP & Create Account
+                </button>
               </>
             )}
           </form>

@@ -1,36 +1,120 @@
-import React, { useEffect, useState } from "react";
+import React, { useContext, useEffect, useState, useRef } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { ChevronLeft, ChevronRight, Trash2, Calendar, Folder, Search, ArrowUpDown, X, Edit2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Trash2, Calendar, Folder, Search, ArrowUpDown, X, Edit2, ListPlus, Upload, FileText, PlayCircle, Image as ImageIcon, Download, Clock } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import MDEditor from "@uiw/react-md-editor";
+import CardMediaPreview from "./CardMediaPreview";
+import { AppContent } from "../../context/AppContext";
+import { MAX_FILE_SIZE_BYTES, PLAN_LABELS, PLAN_LIMITS } from "../../constants/subscription";
 
-const ExpandableText = ({ text, limit = 150 }) => {
+const getRelativeTimeString = (dateInput) => {
+  if (!dateInput) return { relative: "N/A", formattedDate: "N/A" };
+  const date = new Date(dateInput);
+  const now = new Date();
+  
+  const formattedDate = `${date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  })}, ${date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true
+  })}`;
+
+  const diffInMs = now.getTime() - date.getTime();
+  if (diffInMs < 0) {
+    return { relative: "just now", formattedDate };
+  }
+  const diffInSecs = Math.floor(diffInMs / 1000);
+  const diffInMins = Math.floor(diffInSecs / 60);
+  const diffInHours = Math.floor(diffInMins / 60);
+  const diffInDays = Math.floor(diffInHours / 24);
+  const diffInMonths = Math.floor(diffInDays / 30);
+  const diffInYears = Math.floor(diffInDays / 365);
+
+  let relative = "";
+  if (diffInSecs < 30) {
+    relative = "just now";
+  } else if (diffInSecs < 60) {
+    relative = "less than a minute ago";
+  } else if (diffInMins < 60) {
+    relative = diffInMins === 1 ? "1 minute ago" : `${diffInMins} minutes ago`;
+  } else if (diffInHours < 24) {
+    relative = diffInHours === 1 ? "1 hour ago" : `${diffInHours} hours ago`;
+  } else if (diffInDays < 30) {
+    relative = diffInDays === 1 ? "yesterday" : `${diffInDays} days ago`;
+  } else if (diffInMonths < 12) {
+    relative = diffInMonths === 1 ? "1 month ago" : `${diffInMonths} months ago`;
+  } else {
+    relative = diffInYears === 1 ? "1 year ago" : `${diffInYears} years ago`;
+  }
+
+  return { relative, formattedDate };
+};
+
+const normalizeModerationStatus = (status) => {
+  const value = String(status || "").toLowerCase();
+  if (value === "approved" || value === "pending" || value === "rejected") {
+    return value;
+  }
+  return "pending";
+};
+
+const getImageModerationStatus = (item) => {
+  if (!item || item.media_type !== "image") return "approved";
+  return normalizeModerationStatus(item.moderation_status);
+};
+
+const getModerationCopy = (status) => {
+  if (status === "rejected") {
+    return {
+      label: "Rejected",
+      description: "This image was removed after review.",
+      tone: "text-red-400",
+    };
+  }
+  return {
+    label: "Pending review",
+    description: "This image is being reviewed.",
+    tone: "text-amber-300",
+  };
+};
+
+const ExpandableText = ({ text, limit = 150, isMarkdown = false }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   if (!text) return null;
 
-  if (text.length <= limit) {
-    return <div>{text}</div>;
-  }
+  const content = isExpanded || text.length <= limit ? text : `${text.slice(0, limit)}...`;
 
   return (
     <div>
-      <div>
-        {isExpanded ? text : `${text.slice(0, limit)}...`}
+      <div className={isMarkdown ? "w-full max-w-none" : ""} data-color-mode="dark">
+        {isMarkdown ? (
+          <MDEditor.Markdown source={content} style={{ backgroundColor: 'transparent', fontSize: '0.875rem' }} />
+        ) : (
+          content
+        )}
       </div>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          setIsExpanded(!isExpanded);
-        }}
-        className="mt-2 text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors uppercase tracking-wide opacity-80 hover:opacity-100"
-      >
-        {isExpanded ? "Show Less" : "Read More"}
-      </button>
+      {text.length > limit && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsExpanded(!isExpanded);
+          }}
+          className="mt-2 text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors uppercase tracking-wide opacity-80 hover:opacity-100"
+        >
+          {isExpanded ? "Show Less" : "Read More"}
+        </button>
+      )}
     </div>
   );
 };
 
 const AllCards = () => {
+  const { userData } = useContext(AppContent);
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
@@ -41,40 +125,91 @@ const AllCards = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [cardToDelete, setCardToDelete] = useState(null);
 
+  // Bulk Selection State
+  const [selectedCardIds, setSelectedCardIds] = useState([]);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
   // Edit State
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingCard, setEditingCard] = useState(null);
   const [editForm, setEditForm] = useState({ question: "", answer: "", folder: "" });
+  const [editMedia, setEditMedia] = useState([]);
+  const [editNewFiles, setEditNewFiles] = useState([]);
+  const [editMediaLoading, setEditMediaLoading] = useState(false);
+  const [editMediaBusy, setEditMediaBusy] = useState(false);
+  const [editUploadProgress, setEditUploadProgress] = useState(0);
+  const [editNewFilePreviews, setEditNewFilePreviews] = useState([]);
+  const [isEditDragging, setIsEditDragging] = useState(false);
+  const [editDragCounter, setEditDragCounter] = useState(0);
+  const editFileInputRef = useRef(null);
+
+  // Add to List State
+  const [showAddToListModal, setShowAddToListModal] = useState(false);
+  const [cardToAddToList, setCardToAddToList] = useState(null);
+  const [userLists, setUserLists] = useState([]);
 
   const [selectedCard, setSelectedCard] = useState(null);
+  const [selectedCardMedia, setSelectedCardMedia] = useState([]);
+  const [mediaLoading, setMediaLoading] = useState(false);
+  const [activeMediaIndex, setActiveMediaIndex] = useState(null);
   const [limit, setLimit] = useState(10);
   const [searchInput, setSearchInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
-  const [sortBy, setSortBy] = useState("dueDate");
-  const [sortOrder, setSortOrder] = useState("asc");
+  const [sortBy, setSortBy] = useState(() => localStorage.getItem("cards_sortBy") || "dueDate");
+  const [sortOrder, setSortOrder] = useState(() => localStorage.getItem("cards_sortOrder") || "asc");
+
+  useEffect(() => {
+    localStorage.setItem("cards_sortBy", sortBy);
+    localStorage.setItem("cards_sortOrder", sortOrder);
+  }, [sortBy, sortOrder]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPage(1);
+      setSearchTerm(searchInput.trim());
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  const activePlan = userData?.subscription?.plan || "free";
+  const mediaFilesLimit =
+    userData?.subscription?.mediaFilesLimit ?? PLAN_LIMITS[activePlan].mediaFiles;
 
   const fetchCards = async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get("/api/card/cards", {
-        params: {
-          page,
-          limit,
-          folder: selectedFolder === "All" ? undefined : selectedFolder,
-          search: searchTerm || undefined,
-          sortBy,
-          sortOrder
+      if (searchTerm) {
+        const { data } = await axios.get("/api/card/cards/search", {
+          params: { q: searchTerm }
+        });
+
+        const results = data.cards || [];
+        setCards(results);
+        setTotalPages(1);
+        setTotalCards(results.length);
+      } else {
+        const { data } = await axios.get("/api/card/cards", {
+          params: {
+            page,
+            limit,
+            folder: selectedFolder === "All" ? undefined : selectedFolder,
+            search: searchTerm || undefined,
+            sortBy,
+            sortOrder
+          }
+        });
+
+        // Handle pagination response
+        setCards(data.cards || []);
+        setTotalPages(data.totalPages || 1);
+        setAvailableFolders(data.folders || ["All"]);
+        setTotalCards(data.totalCards || 0);
+
+        if (page > (data.totalPages || 1) && (data.totalPages || 0) > 0) {
+          setPage(data.totalPages);
         }
-      });
-
-      // Handle pagination response
-      setCards(data.cards || []);
-      setTotalPages(data.totalPages || 1);
-      setAvailableFolders(data.folders || ["All"]);
-      setTotalCards(data.totalCards || 0);
-
-      if (page > (data.totalPages || 1) && (data.totalPages || 0) > 0) {
-        setPage(data.totalPages);
       }
     } catch (err) {
       if (err.response?.status !== 404) {
@@ -88,11 +223,53 @@ const AllCards = () => {
   };
 
   useEffect(() => {
+    setSelectedCardIds([]);
     fetchCards();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, selectedFolder, limit, searchTerm, sortBy, sortOrder]);
 
+  useEffect(() => {
+    const fetchCardMedia = async () => {
+      if (!selectedCard?._id) {
+        setSelectedCardMedia([]);
+        setActiveMediaIndex(null);
+        return;
+      }
+
+      setMediaLoading(true);
+      try {
+        const { data } = await axios.get(`/api/card/${selectedCard._id}/media`);
+        setSelectedCardMedia(data.media || []);
+      } catch {
+        setSelectedCardMedia([]);
+      } finally {
+        setMediaLoading(false);
+      }
+    };
+
+    fetchCardMedia();
+  }, [selectedCard?._id]);
+
+  const closeMediaViewer = () => setActiveMediaIndex(null);
+
+  const showNextMedia = () => {
+    if (!selectedCardMedia.length) return;
+    setActiveMediaIndex((prev) => {
+      if (prev === null) return 0;
+      return (prev + 1) % selectedCardMedia.length;
+    });
+  };
+
+  const showPreviousMedia = () => {
+    if (!selectedCardMedia.length) return;
+    setActiveMediaIndex((prev) => {
+      if (prev === null) return 0;
+      return (prev - 1 + selectedCardMedia.length) % selectedCardMedia.length;
+    });
+  };
+
   const handleSearchClick = () => {
-    setSearchTerm(searchInput);
+    setSearchTerm(searchInput.trim());
     setPage(1);
   };
 
@@ -108,15 +285,7 @@ const AllCards = () => {
     }
   };
 
-  const handleSortChange = (field) => {
-    if (sortBy === field) {
-      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
-    } else {
-      setSortBy(field);
-      setSortOrder("asc");
-    }
-    setPage(1);
-  };
+
 
   const handleDeleteClick = (e, card) => {
     e.stopPropagation();
@@ -142,6 +311,49 @@ const AllCards = () => {
     setCardToDelete(null);
   };
 
+  const isAllSelected = cards.length > 0 && cards.every(card => selectedCardIds.includes(card._id));
+
+  const handleSelectAllToggle = () => {
+    if (isAllSelected) {
+      const pageCardIds = cards.map(c => c._id);
+      setSelectedCardIds(prev => prev.filter(id => !pageCardIds.includes(id)));
+    } else {
+      const pageCardIds = cards.map(c => c._id);
+      setSelectedCardIds(prev => {
+        const next = [...prev];
+        pageCardIds.forEach(id => {
+          if (!next.includes(id)) next.push(id);
+        });
+        return next;
+      });
+    }
+  };
+
+  const handleSelectCardToggle = (e, cardId) => {
+    e.stopPropagation();
+    setSelectedCardIds(prev =>
+      prev.includes(cardId) ? prev.filter(id => id !== cardId) : [...prev, cardId]
+    );
+  };
+
+  const handleConfirmBulkDelete = async () => {
+    setBulkDeleting(true);
+    try {
+      await axios.post("/api/card/bulk-delete", { cardIds: selectedCardIds });
+      toast.success(`${selectedCardIds.length} cards deleted successfully!`);
+      setSelectedCardIds([]);
+      fetchCards();
+      setShowBulkDeleteModal(false);
+      if (selectedCard && selectedCardIds.includes(selectedCard._id)) {
+        setSelectedCard(null);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message);
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   const handleEditClick = (e, card) => {
     e.stopPropagation();
     setEditingCard(card);
@@ -150,7 +362,206 @@ const AllCards = () => {
       answer: card.answer,
       folder: card.folder || ""
     });
+    setEditNewFiles([]);
     setShowEditModal(true);
+  };
+
+  useEffect(() => {
+    const fetchEditMedia = async () => {
+      if (!showEditModal || !editingCard?._id) {
+        setEditMedia([]);
+        return;
+      }
+      setEditMediaLoading(true);
+      try {
+        const { data } = await axios.get(`/api/card/${editingCard._id}/media`);
+        setEditMedia(data.media || []);
+      } catch {
+        setEditMedia([]);
+      } finally {
+        setEditMediaLoading(false);
+      }
+    };
+
+    fetchEditMedia();
+  }, [showEditModal, editingCard?._id]);
+
+  const processEditFiles = (filesList) => {
+    const selectedFiles = Array.from(filesList || []);
+    if (!selectedFiles.length) return;
+
+    const isValidFile = (file) => {
+      const validType =
+        file.type.startsWith("image/") ||
+        file.type.startsWith("video/") ||
+        file.type === "application/pdf";
+      return validType && file.size <= MAX_FILE_SIZE_BYTES;
+    };
+
+    const invalidFile = selectedFiles.find((file) => !isValidFile(file));
+    if (invalidFile) {
+      toast.error("Only image (including GIF), video, or PDF files up to 2 MB are allowed");
+      return;
+    }
+
+    const maxAllowed = mediaFilesLimit - editMedia.length;
+    if (maxAllowed <= 0) {
+      toast.error(`Your ${PLAN_LABELS[activePlan]} plan allows maximum ${mediaFilesLimit} attachment(s) per card`);
+      return;
+    }
+
+    setEditNewFiles((prev) => {
+      const merged = [...prev];
+      selectedFiles.forEach((file) => {
+        const exists = merged.some(
+          (f) =>
+            f.name === file.name &&
+            f.size === file.size &&
+            f.lastModified === file.lastModified
+        );
+        if (!exists) merged.push(file);
+      });
+      if (merged.length > maxAllowed) {
+        toast.error(`You can add only ${maxAllowed} more file(s)`);
+      }
+      return merged.slice(0, maxAllowed);
+    });
+  };
+
+  const handleEditFileSelection = (event) => {
+    processEditFiles(event.target.files);
+    event.target.value = "";
+  };
+
+  const handleEditDragOver = (e) => {
+    e.preventDefault();
+  };
+
+  const handleEditDragEnter = (e) => {
+    e.preventDefault();
+    setEditDragCounter((prev) => {
+      const next = prev + 1;
+      const maxAllowed = mediaFilesLimit - editMedia.length;
+      if (next === 1 && maxAllowed > 0 && !editMediaBusy && mediaFilesLimit > 0) {
+        setIsEditDragging(true);
+      }
+      return next;
+    });
+  };
+
+  const handleEditDragLeave = (e) => {
+    e.preventDefault();
+    setEditDragCounter((prev) => {
+      const next = Math.max(0, prev - 1);
+      if (next === 0) {
+        setIsEditDragging(false);
+      }
+      return next;
+    });
+  };
+
+  const handleEditDrop = (e) => {
+    e.preventDefault();
+    setIsEditDragging(false);
+    setEditDragCounter(0);
+    
+    if (mediaFilesLimit <= 0) {
+      toast.error("Attachments are disabled on Free plan.");
+      return;
+    }
+    if (editMediaBusy) {
+      return;
+    }
+    const maxAllowed = mediaFilesLimit - editMedia.length;
+    if (maxAllowed <= 0) {
+      toast.error(`Your ${PLAN_LABELS[activePlan]} plan allows maximum ${mediaFilesLimit} attachment(s) per card`);
+      return;
+    }
+    processEditFiles(e.dataTransfer.files);
+  };
+
+  useEffect(() => {
+    const previews = editNewFiles.map((file) => ({
+      key: `${file.name}-${file.lastModified}-${file.size}`,
+      file,
+      previewUrl: file.type === "application/pdf" ? null : URL.createObjectURL(file),
+    }));
+    setEditNewFilePreviews(previews);
+
+    return () => {
+      previews.forEach((item) => {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      });
+    };
+  }, [editNewFiles]);
+
+  const handleDeleteMedia = async (mediaId) => {
+    if (!editingCard?._id || editMediaBusy) return;
+    try {
+      setEditMediaBusy(true);
+      await axios.delete(`/api/card/${editingCard._id}/media/${mediaId}`);
+      setEditMedia((prev) => prev.filter((item) => item.id !== mediaId));
+      toast.success("Attachment deleted");
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Failed to delete attachment");
+    } finally {
+      setEditMediaBusy(false);
+    }
+  };
+
+  const handleUploadEditMedia = async () => {
+    if (!editingCard?._id || !editNewFiles.length || editMediaBusy) return;
+    try {
+      setEditMediaBusy(true);
+      setEditUploadProgress(0);
+      const formData = new FormData();
+      editNewFiles.forEach((file) => formData.append("media", file));
+      const { data } = await axios.post(`/api/card/${editingCard._id}/media`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (progressEvent) => {
+          const total = progressEvent.total || 0;
+          if (!total) return;
+          const percent = Math.round((progressEvent.loaded * 100) / total);
+          setEditUploadProgress(Math.max(1, Math.min(percent, 100)));
+        },
+      });
+      setEditMedia((prev) => [...prev, ...(data.media || [])]);
+      setEditNewFiles([]);
+      setEditNewFilePreviews([]);
+      setEditUploadProgress(0);
+      toast.success("Attachments uploaded");
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Failed to upload attachments");
+    } finally {
+      setEditMediaBusy(false);
+    }
+  };
+
+  const handleDownloadMedia = async (item) => {
+    try {
+      const status = getImageModerationStatus(item);
+      if (item?.media_type === "image" && status !== "approved") {
+        const message =
+          status === "rejected"
+            ? "This image was rejected and cannot be downloaded."
+            : "This image is pending review and cannot be downloaded yet.";
+        toast.error(message);
+        return;
+      }
+      const response = await axios.get(item.download_url || item.url, {
+        responseType: "blob",
+      });
+      const blobUrl = window.URL.createObjectURL(response.data);
+      const anchor = document.createElement("a");
+      anchor.href = blobUrl;
+      anchor.download = item.file_name || "attachment";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch {
+      toast.error("Failed to download attachment");
+    }
   };
 
   const handleUpdateCard = async () => {
@@ -176,6 +587,32 @@ const AllCards = () => {
     }
   };
 
+  const handleAddToListClick = async (e, card) => {
+    e.stopPropagation();
+    setCardToAddToList(card);
+    setShowAddToListModal(true);
+    
+    try {
+      const { data } = await axios.get("/api/lists");
+      if (data.success) {
+        setUserLists(data.lists.filter(l => l.my_role === 'owner' || l.my_role === 'editor'));
+      }
+    } catch {
+      toast.error("Failed to fetch lists");
+    }
+  };
+
+  const handleConfirmAddToList = async (listId) => {
+    try {
+      await axios.post(`/api/lists/${listId}/cards`, { cardId: cardToAddToList._id });
+      toast.success("Card added to list!");
+      setShowAddToListModal(false);
+      setCardToAddToList(null);
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Failed to add card to list");
+    }
+  };
+
   // Helper to get range string
   const getRangeString = () => {
     if (totalCards === 0) return "0-0 of 0";
@@ -183,6 +620,12 @@ const AllCards = () => {
     const end = Math.min(page * limit, totalCards);
     return `${start}-${end} of ${totalCards}`;
   };
+
+  const activeMedia = activeMediaIndex !== null ? selectedCardMedia[activeMediaIndex] : null;
+  const activeMediaStatus = getImageModerationStatus(activeMedia);
+  const isActiveMediaBlocked =
+    activeMedia?.media_type === "image" && activeMediaStatus !== "approved";
+  const activeMediaCopy = isActiveMediaBlocked ? getModerationCopy(activeMediaStatus) : null;
 
   return (
     <div className="w-full max-w-7xl mx-auto p-2 md:p-6 relative">
@@ -259,6 +702,7 @@ const AllCards = () => {
               <option value="question" className="bg-[#1f262d] text-gray-300">Sort by Question</option>
               <option value="folder" className="bg-[#1f262d] text-gray-300">Sort by Folder</option>
               <option value="createdAt" className="bg-[#1f262d] text-gray-300">Sort by Created</option>
+              <option value="updatedAt" className="bg-[#1f262d] text-gray-300">Sort by Last Updated</option>
             </select>
             <button
               onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
@@ -282,56 +726,114 @@ const AllCards = () => {
             <table className="w-full text-left text-sm text-gray-300">
               <thead className="bg-[#272e36] text-xs uppercase font-semibold text-gray-400 tracking-wider">
                 <tr>
+                  <th className="px-4 py-4 w-12 text-center">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      onChange={handleSelectAllToggle}
+                      className="w-4 h-4 rounded border-white/10 text-indigo-600 focus:ring-indigo-500/20 bg-gray-900 cursor-pointer"
+                    />
+                  </th>
                   <th className="px-6 py-4">Question</th>
                   <th className="px-6 py-4 whitespace-nowrap">Folder</th>
+                  <th className="px-6 py-4 whitespace-nowrap">Activity</th>
                   <th className="px-6 py-4 whitespace-nowrap">Due Date</th>
                   <th className="px-6 py-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {cards.map((card) => (
-                  <tr
-                    key={card._id}
-                    className="hover:bg-white/5 transition-colors group cursor-pointer"
-                    onClick={() => setSelectedCard(card)}
-                  >
-                    <td className="px-6 py-4 font-medium text-white max-w-[300px] md:max-w-[400px] truncate" title={card.question}>
-                      {card.question}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-indigo-600/10 text-indigo-400 border border-indigo-600/20 whitespace-nowrap">
-                        {card.folder || "Uncategorized"}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-gray-400 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-3 h-3 opacity-60" />
-                        {new Date(card.dueDate).toLocaleDateString()}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={(e) => handleEditClick(e, card)}
-                          className="p-2 hover:bg-blue-500/10 hover:text-blue-400 rounded-lg transition-all opacity-60 group-hover:opacity-100"
-                          title="Edit"
-                        >
-                          <Edit2 className="w-4 h-4 text-blue-500" />
-                        </button>
-                        <button
-                          onClick={(e) => handleDeleteClick(e, card)}
-                          className="p-2 hover:bg-red-500/10 hover:text-red-400 rounded-lg transition-all opacity-60 group-hover:opacity-100"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4 text-red-500" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {cards.map((card) => {
+                  const isSelected = selectedCardIds.includes(card._id);
+                  return (
+                    <tr
+                      key={card._id}
+                      className={`hover:bg-white/5 transition-colors group cursor-pointer ${
+                        isSelected ? "bg-indigo-600/5 hover:bg-indigo-600/10" : ""
+                      }`}
+                      onClick={() => setSelectedCard(card)}
+                    >
+                      <td className="px-4 py-4 w-12 text-center" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => handleSelectCardToggle(e, card._id)}
+                          className="w-4 h-4 rounded border-white/10 text-indigo-600 focus:ring-indigo-500/20 bg-gray-900 cursor-pointer"
+                        />
+                      </td>
+                      <td className="px-6 py-4 font-medium text-white max-w-[300px] md:max-w-[400px]" title={card.question}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="truncate">{card.question}</span>
+                          {typeof card.similarity === "number" && (
+                            <span
+                              className="shrink-0 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200"
+                              title="Semantic similarity"
+                            >
+                              {Math.round(card.similarity * 100)}%
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-indigo-600/10 text-indigo-400 border border-indigo-600/20 whitespace-nowrap">
+                          {card.folder || "Uncategorized"}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-gray-400 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-3.5 h-3.5 opacity-60 text-indigo-400 shrink-0" />
+                          {(() => {
+                            const isUpdated = card.updatedAt && new Date(card.updatedAt).getTime() - new Date(card.createdAt).getTime() > 1000;
+                            const dateObj = isUpdated ? card.updatedAt : card.createdAt;
+                            const { relative, formattedDate } = getRelativeTimeString(dateObj);
+                            return (
+                              <div className="flex flex-col animate-fadeIn">
+                                <span className="text-xs text-gray-300 font-medium">
+                                  <span className="text-gray-400 text-[10px] mr-1 uppercase font-semibold tracking-wider">{isUpdated ? "Updated" : "Created"}</span>
+                                  {relative}
+                                </span>
+                                <span className="text-xs text-gray-400 font-light mt-0.5">{formattedDate}</span>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-gray-400 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="w-3 h-3 opacity-60" />
+                          {new Date(card.dueDate).toLocaleDateString()}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={(e) => handleAddToListClick(e, card)}
+                            className="p-2 hover:bg-green-500/10 hover:text-green-400 rounded-lg transition-all opacity-60 group-hover:opacity-100"
+                            title="Add to List"
+                          >
+                            <ListPlus className="w-4 h-4 text-green-500" />
+                          </button>
+                          <button
+                            onClick={(e) => handleEditClick(e, card)}
+                            className="p-2 hover:bg-blue-500/10 hover:text-blue-400 rounded-lg transition-all opacity-60 group-hover:opacity-100"
+                            title="Edit"
+                          >
+                            <Edit2 className="w-4 h-4 text-blue-500" />
+                          </button>
+                          <button
+                            onClick={(e) => handleDeleteClick(e, card)}
+                            className="p-2 hover:bg-red-500/10 hover:text-red-400 rounded-lg transition-all opacity-60 group-hover:opacity-100"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4 text-red-500" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
                 {cards.length === 0 && (
                   <tr>
-                    <td colSpan="4" className="px-6 py-16 text-center text-gray-500">
+                    <td colSpan="6" className="px-6 py-16 text-center text-gray-500">
                       <div className="flex flex-col items-center gap-2">
                         <Folder className="w-8 h-8 opacity-20" />
                         <p>No cards found.</p>
@@ -416,7 +918,10 @@ const AllCards = () => {
       {selectedCard && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn"
-          onClick={() => setSelectedCard(null)}
+          onClick={() => {
+            setSelectedCard(null);
+            setActiveMediaIndex(null);
+          }}
         >
           <div
             className="bg-[#1e2329] border border-white/10 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
@@ -425,12 +930,32 @@ const AllCards = () => {
             <div className="p-6">
               <div className="flex justify-between items-start mb-6">
                 <h2 className="text-xl font-bold text-white">Card Details</h2>
-                <button
-                  onClick={() => setSelectedCard(null)}
-                  className="text-gray-400 hover:text-white transition-colors"
-                >
-                  ✕
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setEditingCard(selectedCard);
+                      setEditForm({
+                        question: selectedCard.question,
+                        answer: selectedCard.answer,
+                        folder: selectedCard.folder || "",
+                      });
+                      setEditNewFiles([]);
+                      setShowEditModal(true);
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-300 hover:bg-blue-500/20 hover:text-blue-200 transition-colors text-sm"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedCard(null);
+                      setActiveMediaIndex(null);
+                    }}
+                    className="text-gray-400 hover:text-white transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-6">
@@ -443,13 +968,28 @@ const AllCards = () => {
 
                 <div className="space-y-2">
                   <h3 className="text-sm uppercase text-gray-500 font-semibold tracking-wider">Answer</h3>
-                  <div className="p-4 rounded-xl bg-[#272e36] border border-white/5 text-gray-300 leading-relaxed whitespace-pre-wrap">
-                    <ExpandableText text={selectedCard.answer} limit={400} />
+                  <div data-color-mode="dark" className="rounded-xl overflow-hidden border border-white/5 shadow-inner">
+                    <MDEditor
+                      value={selectedCard.answer}
+                      preview="preview"
+                      hideToolbar={true}
+                    />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 rounded-lg bg-[#272e36]/50 border border-white/5">
+                <div className="space-y-2">
+                  <h3 className="text-sm uppercase text-gray-500 font-semibold tracking-wider">Media</h3>
+                  {mediaLoading ? (
+                    <p className="text-sm text-gray-400">Loading attachments...</p>
+                  ) : selectedCardMedia.length ? (
+                    <CardMediaPreview media={selectedCardMedia} onMediaClick={setActiveMediaIndex} />
+                  ) : (
+                    <p className="text-sm text-gray-500">No attachments</p>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                  <div className="p-3 rounded-lg bg-[#272e36]/50 border border-white/5 col-span-2 sm:col-span-1">
                     <span className="text-xs text-gray-500 block mb-1">Folder</span>
                     <span className="text-blue-400 font-medium">{selectedCard.folder || "Uncategorized"}</span>
                   </div>
@@ -457,10 +997,106 @@ const AllCards = () => {
                     <span className="text-xs text-gray-500 block mb-1">Due Date</span>
                     <span className="text-gray-300">{new Date(selectedCard.dueDate).toLocaleDateString()}</span>
                   </div>
+                  <div className="p-3 rounded-lg bg-[#272e36]/50 border border-white/5 col-span-2 sm:col-span-1">
+                    <span className="text-xs text-gray-500 block mb-1">Last Activity</span>
+                    <span className="text-gray-300 text-xs block">
+                      {(() => {
+                        const isUpdated = selectedCard.updatedAt && new Date(selectedCard.updatedAt).getTime() - new Date(selectedCard.createdAt).getTime() > 1000;
+                        const dateObj = isUpdated ? selectedCard.updatedAt : selectedCard.createdAt;
+                        const { relative, formattedDate } = getRelativeTimeString(dateObj);
+                        return (
+                          <>
+                            <span className="font-medium text-gray-200">{isUpdated ? "Updated " : "Created "} {relative}</span>
+                            <span className="text-xs text-gray-400 block mt-0.5">{formattedDate}</span>
+                          </>
+                        );
+                      })()}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
+
+          {activeMediaIndex !== null && activeMedia && (
+            <div
+              className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"
+              onClick={closeMediaViewer}
+            >
+              <div
+                className="w-full max-w-5xl rounded-2xl border border-white/10 bg-[#11161c] p-4 sm:p-6"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex justify-end mb-3">
+                  <button
+                    type="button"
+                    onClick={closeMediaViewer}
+                    className="rounded-md px-3 py-1.5 text-sm text-gray-200 bg-white/10 hover:bg-white/20"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="w-full min-h-[280px] max-h-[70vh] flex items-center justify-center bg-black rounded-lg overflow-hidden">
+                  {activeMedia.media_type === "image" && !isActiveMediaBlocked && (
+                    <img
+                      src={activeMedia.url}
+                      alt={activeMedia.file_name || "attachment"}
+                      className="max-w-full max-h-[70vh] object-contain"
+                    />
+                  )}
+
+                  {activeMedia.media_type === "image" && isActiveMediaBlocked && activeMediaCopy && (
+                    <div className="text-center px-4">
+                      <p className={`text-xs uppercase tracking-wider ${activeMediaCopy.tone}`}>
+                        {activeMediaCopy.label}
+                      </p>
+                      <p className="text-sm text-gray-400 mt-2">{activeMediaCopy.description}</p>
+                    </div>
+                  )}
+
+                  {activeMedia.media_type === "video" && (
+                    <video
+                      src={activeMedia.url}
+                      controls
+                      autoPlay
+                      className="max-w-full max-h-[70vh]"
+                    />
+                  )}
+
+                  {activeMedia.media_type === "file" && (
+                    <iframe
+                      src={activeMedia.url}
+                      title={activeMedia.file_name || "PDF preview"}
+                      className="w-full h-[70vh] bg-white"
+                    />
+                  )}
+                </div>
+
+                <div className="mt-4 flex items-center justify-center gap-4">
+                  <button
+                    type="button"
+                    onClick={showPreviousMedia}
+                    className="rounded-full p-2 bg-white/10 text-white hover:bg-white/20"
+                    aria-label="Previous media"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <span className="text-sm text-gray-300">
+                    {activeMediaIndex + 1} / {selectedCardMedia.length}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={showNextMedia}
+                    className="rounded-full p-2 bg-white/10 text-white hover:bg-white/20"
+                    aria-label="Next media"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -496,14 +1132,15 @@ const AllCards = () => {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm text-gray-400">Answer</label>
-                  <textarea
-                    value={editForm.answer}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, answer: e.target.value }))}
-                    className="w-full rounded-xl border border-white/10 bg-[#272e36] p-3 text-white placeholder-gray-500 focus:border-indigo-500 focus:ring focus:ring-indigo-500/20 outline-none transition-all"
-                    rows={5}
-                  />
+                <div className="space-y-2" data-color-mode="dark">
+                  <label className="text-sm text-gray-400">Answer (Markdown supported)</label>
+                  <div className="rounded-xl overflow-hidden border border-white/5 shadow-inner">
+                    <MDEditor
+                      value={editForm.answer}
+                      onChange={(val) => setEditForm(prev => ({ ...prev, answer: val || '' }))}
+                      preview="edit"
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -520,6 +1157,193 @@ const AllCards = () => {
                       <option key={f} value={f} />
                     ))}
                   </datalist>
+                </div>
+
+                <div className="space-y-3 rounded-xl border border-white/10 bg-[#272e36] p-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm text-gray-300">
+                      Attachments ({editMedia.length}/{mediaFilesLimit})
+                    </label>
+                  </div>
+
+                  {editMediaLoading ? (
+                    <p className="text-xs text-gray-400">Loading attachments...</p>
+                  ) : editMedia.length ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {editMedia.map((item) => {
+                        const status = getImageModerationStatus(item);
+                        const isBlocked = item.media_type === "image" && status !== "approved";
+                        const copy = isBlocked ? getModerationCopy(status) : null;
+                        return (
+                          <div key={item.id} className="relative rounded-lg overflow-hidden border border-white/10 bg-[#1f262d]">
+                            {item.media_type === "image" && !isBlocked && (
+                              <img src={item.url} alt={item.file_name || "attachment"} className="w-full h-28 object-cover" />
+                            )}
+                            {item.media_type === "image" && isBlocked && copy && (
+                              <div className="h-28 flex items-center justify-center bg-[#202733] px-2 text-center">
+                                <div>
+                                  <p className={`text-[10px] uppercase tracking-wider ${copy.tone}`}>{copy.label}</p>
+                                  <p className="text-[11px] text-gray-400 mt-1">{copy.description}</p>
+                                </div>
+                              </div>
+                            )}
+                            {item.media_type === "video" && (
+                              <div className="relative">
+                                <video src={item.url} className="w-full h-28 object-cover pointer-events-none" />
+                                <div className="absolute inset-0 bg-black/35 flex items-center justify-center">
+                                  <PlayCircle className="w-8 h-8 text-white" />
+                                </div>
+                              </div>
+                            )}
+                            {item.media_type === "file" && (
+                              <div className="h-28 flex items-center justify-center gap-2 text-indigo-300 bg-[#202733]">
+                                <FileText className="w-5 h-5" />
+                                <span className="text-sm">PDF</span>
+                              </div>
+                            )}
+                            <div className="px-2 py-1.5 text-xs text-gray-300 truncate">{item.file_name || "Attachment"}</div>
+                            <div className="absolute top-2 right-2 flex items-center gap-1">
+                              <button
+                                type="button"
+                                disabled={isBlocked}
+                                onClick={() => handleDownloadMedia(item)}
+                                className={`p-1.5 rounded-md text-indigo-200 bg-black/40 hover:bg-indigo-500/30 ${
+                                  isBlocked ? "opacity-50 cursor-not-allowed hover:bg-black/40" : ""
+                                }`}
+                                title={
+                                  isBlocked
+                                    ? "Attachment unavailable until approved"
+                                    : "Download attachment"
+                                }
+                              >
+                                <Download className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={editMediaBusy}
+                                onClick={() => handleDeleteMedia(item.id)}
+                                className="p-1.5 rounded-md text-red-300 bg-black/40 hover:bg-red-500/30 disabled:opacity-50"
+                                title="Delete attachment"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500">No attachments</p>
+                  )}
+
+                  <div
+                    onDragOver={handleEditDragOver}
+                    onDragEnter={handleEditDragEnter}
+                    onDragLeave={handleEditDragLeave}
+                    onDrop={handleEditDrop}
+                    className={`relative rounded-xl border border-dashed p-4 transition-all duration-300 ${
+                      isEditDragging
+                        ? "border-indigo-500 bg-indigo-950/40 shadow-[0_0_20px_rgba(99,102,241,0.2)] scale-[1.01]"
+                        : "border-white/10 bg-[#1f262d] hover:border-white/20"
+                    }`}
+                  >
+                    {isEditDragging && (
+                      <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#1f262d]/95 rounded-xl backdrop-blur-sm animate-fadeIn">
+                        <div className="absolute inset-0 bg-indigo-500/5 rounded-xl animate-pulse-glow" />
+                        <div className="relative z-10 flex flex-col items-center gap-2">
+                          <div className="w-12 h-12 rounded-full bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 animate-float shadow-[0_0_15px_rgba(99,102,241,0.3)]">
+                            <Upload className="w-6 h-6" />
+                          </div>
+                          <span className="text-sm font-semibold text-white mt-2">Drop your files here</span>
+                          <span className="text-xs text-gray-400">Accepts image, video, or PDF up to 2MB</span>
+                        </div>
+                      </div>
+                    )}
+
+                    <div
+                      className={`flex flex-col items-center justify-center py-4 cursor-pointer group ${
+                        (editMedia.length >= mediaFilesLimit || editMediaBusy || mediaFilesLimit === 0) ? "opacity-50 cursor-not-allowed" : ""
+                      }`}
+                      onClick={() => {
+                        if (!(editMedia.length >= mediaFilesLimit || editMediaBusy || mediaFilesLimit === 0)) {
+                          editFileInputRef.current?.click();
+                        }
+                      }}
+                    >
+                      <input
+                        ref={editFileInputRef}
+                        type="file"
+                        multiple
+                        accept="image/*,video/*,application/pdf"
+                        onChange={handleEditFileSelection}
+                        disabled={editMedia.length >= mediaFilesLimit || editMediaBusy || mediaFilesLimit === 0}
+                        className="hidden"
+                      />
+                      <div className="w-10 h-10 rounded-full bg-[#272e36] border border-white/5 flex items-center justify-center text-gray-400 group-hover:text-indigo-400 group-hover:bg-indigo-600/10 group-hover:border-indigo-500/30 transition-all duration-300">
+                        <Upload className="w-5 h-5" />
+                      </div>
+                      <p className="text-sm font-medium text-gray-300 mt-2 text-center">
+                        <span className="text-indigo-400 hover:text-indigo-300 font-semibold underline">Click to upload</span> or drag and drop
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1 text-center">
+                        {mediaFilesLimit === 0
+                          ? "Attachments are disabled on Free plan."
+                          : `Max ${mediaFilesLimit} file(s) per card on ${PLAN_LABELS[activePlan]} plan. 2 MB per file.`}
+                      </p>
+                    </div>
+
+                    {!!editNewFilePreviews.length && (
+                      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2" onClick={(e) => e.stopPropagation()}>
+                        {editNewFilePreviews.map(({ key, file, previewUrl }) => (
+                          <div key={key} className="rounded-md border border-white/10 bg-[#1f262d] overflow-hidden">
+                            {file.type.startsWith("image/") && previewUrl && (
+                              <img src={previewUrl} alt={file.name} className="w-full h-24 object-cover" />
+                            )}
+                            {file.type.startsWith("video/") && previewUrl && (
+                              <div className="relative">
+                                <video src={previewUrl} className="w-full h-24 object-cover pointer-events-none" />
+                                <div className="absolute inset-0 bg-black/35 flex items-center justify-center">
+                                  <PlayCircle className="w-7 h-7 text-white" />
+                                </div>
+                              </div>
+                            )}
+                            {file.type === "application/pdf" && (
+                              <div className="h-24 flex items-center justify-center gap-2 text-indigo-300 bg-[#202733]">
+                                <FileText className="w-5 h-5" />
+                                <span className="text-sm">PDF</span>
+                              </div>
+                            )}
+                            <div className="px-2 py-1.5 text-xs text-gray-300 truncate flex items-center gap-1.5">
+                              {file.type.startsWith("image/") ? <ImageIcon className="w-3.5 h-3.5 text-blue-300" /> : file.type.startsWith("video/") ? <PlayCircle className="w-3.5 h-3.5 text-purple-300" /> : <FileText className="w-3.5 h-3.5 text-indigo-300" />}
+                              <span className="truncate">{file.name}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="mt-4 flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={handleUploadEditMedia}
+                        disabled={!editNewFiles.length || editMediaBusy}
+                        className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm disabled:opacity-50"
+                      >
+                        <Upload className="w-4 h-4" />
+                        {editMediaBusy ? "Uploading..." : "Upload Selected Files"}
+                      </button>
+                      {editMediaBusy && editUploadProgress > 0 && (
+                        <div className="rounded-lg border border-indigo-500/30 bg-indigo-600/10 p-2.5">
+                          <div className="flex justify-between text-xs text-indigo-200 mb-1">
+                            <span>Uploading attachments...</span>
+                            <span>{editUploadProgress}%</span>
+                          </div>
+                          <div className="h-2 rounded-full bg-[#1f262d] overflow-hidden">
+                            <div className="h-full bg-indigo-500 transition-all duration-200" style={{ width: `${editUploadProgress}%` }} />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex gap-3 justify-end mt-6">
@@ -577,6 +1401,143 @@ const AllCards = () => {
               >
                 <Trash2 className="w-4 h-4" />
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add to List Modal */}
+      {showAddToListModal && cardToAddToList && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn"
+          onClick={() => setShowAddToListModal(false)}
+        >
+          <div
+            className="bg-[#1e2329] border border-white/10 rounded-2xl shadow-2xl w-full max-w-md p-6"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-start mb-6">
+              <div className="flex items-center gap-2">
+                <ListPlus className="text-indigo-400" size={20} />
+                <h2 className="text-xl font-bold text-white">Add to List</h2>
+              </div>
+              <button
+                onClick={() => setShowAddToListModal(false)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            
+            <div className="p-3 rounded-lg bg-[#272e36] border border-white/5 mb-6">
+              <p className="text-white font-medium line-clamp-2">{cardToAddToList.question}</p>
+            </div>
+
+            <h3 className="text-sm uppercase text-gray-500 font-semibold tracking-wider mb-3">Your Lists</h3>
+            
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {userLists.length === 0 ? (
+                <div className="text-center text-gray-500 py-6">
+                  <p>No lists available.</p>
+                  <p className="text-xs mt-1">Create a list first in the Lists tab.</p>
+                </div>
+              ) : (
+                userLists.map(list => (
+                  <button
+                    key={list.id}
+                    onClick={() => handleConfirmAddToList(list.id)}
+                    className="w-full flex items-center justify-between p-3 rounded-xl bg-[#272e36]/50 hover:bg-[#272e36] border border-white/5 hover:border-indigo-500/30 transition-all text-left group"
+                  >
+                    <div>
+                      <p className="text-white font-medium text-sm">{list.title}</p>
+                      <p className="text-gray-500 text-xs mt-0.5">{list.card_count} cards</p>
+                    </div>
+                    <div className="px-3 py-1 rounded-lg bg-indigo-600/20 text-indigo-400 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                      Add
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Bulk Action Bar */}
+      {selectedCardIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-40 bg-[#1e2329]/95 border border-indigo-500/30 rounded-2xl shadow-2xl px-6 py-4 flex items-center justify-between gap-6 backdrop-blur-md animate-slideUp min-w-[320px] md:min-w-[500px]">
+          <div className="flex items-center gap-3">
+            <span className="flex h-2.5 w-2.5 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-indigo-500"></span>
+            </span>
+            <span className="text-sm font-medium text-gray-200">
+              <span className="text-indigo-400 font-bold text-base mr-1">{selectedCardIds.length}</span>
+              {selectedCardIds.length === 1 ? "card" : "cards"} selected
+            </span>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setSelectedCardIds([])}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-all"
+            >
+              Clear Selection
+            </button>
+            <button
+              onClick={() => setShowBulkDeleteModal(true)}
+              className="px-4 py-2 rounded-xl bg-red-600/90 hover:bg-red-600 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-lg shadow-red-500/20 active:scale-95"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Delete Selected
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete Confirmation Modal */}
+      {showBulkDeleteModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn"
+          onClick={() => !bulkDeleting && setShowBulkDeleteModal(false)}
+        >
+          <div
+            className="bg-[#1e2329] border border-white/10 rounded-2xl shadow-2xl w-full max-w-md p-6"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <Trash2 className="w-6 h-6 text-red-500" />
+              <h3 className="text-xl font-bold text-white">Bulk Delete Cards</h3>
+            </div>
+            <p className="text-gray-300 mb-4">
+              Are you sure you want to delete <span className="text-red-400 font-bold">{selectedCardIds.length}</span> selected flashcards?
+            </p>
+            <p className="text-red-400 text-sm mb-6">This action will also permanently delete all associated media files. This cannot be undone.</p>
+            <div className="flex gap-3 justify-end">
+              <button
+                disabled={bulkDeleting}
+                className="px-4 py-2 rounded-lg bg-[#272e36] text-gray-300 hover:bg-[#2a3441] transition-colors border border-white/5 disabled:opacity-50"
+                onClick={() => setShowBulkDeleteModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                disabled={bulkDeleting}
+                className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-colors flex items-center gap-2 font-medium disabled:opacity-50"
+                onClick={handleConfirmBulkDelete}
+              >
+                {bulkDeleting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    Delete {selectedCardIds.length} Cards
+                  </>
+                )}
               </button>
             </div>
           </div>

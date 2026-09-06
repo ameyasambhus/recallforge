@@ -1,6 +1,7 @@
 import { Delete, Trash, Trash2 } from "lucide-react";
 import React from "react";
 import { useState } from "react";
+import MDEditor from "@uiw/react-md-editor";
 
 const Card = ({ card, onDelete }) => {
   const [showAnswer, setShowAnswer] = useState(false);
@@ -22,7 +23,13 @@ const Card = ({ card, onDelete }) => {
       {showAnswer ? (
         <div className="mb-2">
           <span className="font-bold text-lg mt-5">A: </span>
-          <span className="text-neutral-400">{card.answer}</span>
+          <div data-color-mode="dark" className="mt-2 rounded-lg overflow-hidden border border-white/5 shadow-inner">
+            <MDEditor
+              value={card.answer}
+              preview="preview"
+              hideToolbar={true}
+            />
+          </div>
         </div>
       ) : (
         <div></div>

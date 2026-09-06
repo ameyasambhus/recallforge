@@ -8,6 +8,7 @@ export const AppContextProvider = (props) => {
   axios.defaults.withCredentials = true;
   const [loggedIn, setLoggedIn] = useState(false);
   const [userData, setUserData] = useState(false);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
 
   const getAuthState = async () => {
     try {
@@ -20,6 +21,8 @@ export const AppContextProvider = (props) => {
     } catch (error) {
       // Silently fail - user is not authenticated
       console.error("Error fetching auth state:", error);
+    } finally {
+      setIsAuthLoading(false);
     }
   };
 
@@ -68,6 +71,7 @@ export const AppContextProvider = (props) => {
   const value = {
     loggedIn,
     userData,
+    isAuthLoading,
     setLoggedIn,
     setUserData,
     getUserData,
